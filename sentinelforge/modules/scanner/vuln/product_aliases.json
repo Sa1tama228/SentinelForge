@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "aliases": [
+    {
+      "aliases": ["apache", "apache httpd", "httpd", "apache2"],
+      "vendor": "apache",
+      "product": "http_server",
+      "display_name": "Apache HTTP Server",
+      "cpe_candidates": ["cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*"],
+      "confidence": 0.95
+    },
+    {
+      "aliases": ["nginx"],
+      "vendor": "nginx",
+      "product": "nginx",
+      "display_name": "nginx",
+      "cpe_candidates": ["cpe:2.3:a:nginx:nginx:*:*:*:*:*:*:*:*"],
+      "confidence": 0.98
+    },
+    {
+      "aliases": ["openssh", "open ssh", "ssh"],
+      "vendor": "openbsd",
+      "product": "openssh",
+      "display_name": "OpenSSH",
+      "cpe_candidates": ["cpe:2.3:a:openbsd:openssh:*:*:*:*:*:*:*:*"],
+      "confidence": 0.94
+    },
+    {
+      "aliases": ["microsoft-iis", "iis", "internet information services"],
+      "vendor": "microsoft",
+      "product": "internet_information_services",
+      "display_name": "Microsoft Internet Information Services",
+      "cpe_candidates": ["cpe:2.3:a:microsoft:internet_information_services:*:*:*:*:*:*:*:*"],
+      "confidence": 0.96
+    },
+    {
+      "aliases": ["postgres", "postgresql"],
+      "vendor": "postgresql",
+      "product": "postgresql",
+      "display_name": "PostgreSQL",
+      "cpe_candidates": ["cpe:2.3:a:postgresql:postgresql:*:*:*:*:*:*:*:*"],
+      "confidence": 0.96
+    },
+    {
+      "aliases": ["mysql", "oracle mysql"],
+      "vendor": "oracle",
+      "product": "mysql",
+      "display_name": "Oracle MySQL",
+      "cpe_candidates": ["cpe:2.3:a:oracle:mysql:*:*:*:*:*:*:*:*"],
+      "confidence": 0.9
+    },
+    {
+      "aliases": ["mariadb"],
+      "vendor": "mariadb",
+      "product": "mariadb",
+      "display_name": "MariaDB",
+      "cpe_candidates": ["cpe:2.3:a:mariadb:mariadb:*:*:*:*:*:*:*:*"],
+      "confidence": 0.95
+    },
+    {
+      "aliases": ["redis"],
+      "vendor": "redis",
+      "product": "redis",
+      "display_name": "Redis",
+      "cpe_candidates": ["cpe:2.3:a:redis:redis:*:*:*:*:*:*:*:*"],
+      "confidence": 0.96
+    },
+    {
+      "aliases": ["vsftpd"],
+      "vendor": "vsftpd_project",
+      "product": "vsftpd",
+      "display_name": "vsftpd",
+      "cpe_candidates": ["cpe:2.3:a:vsftpd_project:vsftpd:*:*:*:*:*:*:*:*"],
+      "confidence": 0.95
+    },
+    {
+      "aliases": ["proftpd"],
+      "vendor": "proftpd",
+      "product": "proftpd",
+      "display_name": "ProFTPD",
+      "cpe_candidates": ["cpe:2.3:a:proftpd:proftpd:*:*:*:*:*:*:*:*"],
+      "confidence": 0.95
+    },
+    {
+      "aliases": ["tomcat", "apache-coyote", "apache tomcat"],
+      "vendor": "apache",
+      "product": "tomcat",
+      "display_name": "Apache Tomcat",
+      "cpe_candidates": ["cpe:2.3:a:apache:tomcat:*:*:*:*:*:*:*:*"],
+      "confidence": 0.9
+    },
+    {
+      "aliases": ["exim"],
+      "vendor": "exim",
+      "product": "exim",
+      "display_name": "Exim",
+      "cpe_candidates": ["cpe:2.3:a:exim:exim:*:*:*:*:*:*:*:*"],
+      "confidence": 0.95
+    },
+    {
+      "aliases": ["postfix"],
+      "vendor": "postfix",
+      "product": "postfix",
+      "display_name": "Postfix",
+      "cpe_candidates": ["cpe:2.3:a:postfix:postfix:*:*:*:*:*:*:*:*"],
+      "confidence": 0.95
+    },
+    {
+      "aliases": ["log4j", "apache log4j"],
+      "vendor": "apache",
+      "product": "log4j",
+      "display_name": "Apache Log4j",
+      "cpe_candidates": ["cpe:2.3:a:apache:log4j:*:*:*:*:*:*:*:*"],
+      "confidence": 0.82
+    },
+    {
+      "aliases": ["struts", "apache struts"],
+      "vendor": "apache",
+      "product": "struts",
+      "display_name": "Apache Struts",
+      "cpe_candidates": ["cpe:2.3:a:apache:struts:*:*:*:*:*:*:*:*"],
+      "confidence": 0.84
+    },
+    {
+      "aliases": ["php-fpm", "php fpm"],
+      "vendor": "php",
+      "product": "php",
+      "display_name": "PHP-FPM",
+      "cpe_candidates": ["cpe:2.3:a:php:php:*:*:*:*:*:*:*:*"],
+      "confidence": 0.74
+    },
+    {
+      "aliases": ["spring", "spring framework"],
+      "vendor": "vmware",
+      "product": "spring_framework",
+      "display_name": "Spring Framework",
+      "cpe_candidates": ["cpe:2.3:a:vmware:spring_framework:*:*:*:*:*:*:*:*"],
+      "confidence": 0.78
+    },
+    {
+      "aliases": ["rdp", "microsoft rdp", "remote desktop"],
+      "vendor": "microsoft",
+      "product": "remote_desktop_services",
+      "display_name": "Microsoft Remote Desktop Services",
+      "cpe_candidates": ["cpe:2.3:a:microsoft:remote_desktop_services:*:*:*:*:*:*:*:*"],
+      "confidence": 0.7
+    }
+  ]
+}

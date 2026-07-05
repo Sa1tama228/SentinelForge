@@ -1,0 +1,28 @@
+{
+  "scanner": {
+    "target_allowlist": [
+      "127.0.0.1",
+      "localhost",
+      "*.internal.example"
+    ],
+    "block_public_targets": true,
+    "block_private_targets": false,
+    "engine": "auto",
+    "nikto_enabled": false,
+    "nikto_path": "",
+    "nmap_extra_flags": ""
+  },
+  "network": {
+    "use_proxy": false,
+    "http_proxy": "",
+    "https_proxy": "",
+    "proxy_list_path": "",
+    "proxy_scheme": "http",
+    "no_proxy": "127.0.0.1,localhost"
+  },
+  "recon": {
+    "wordlist_enabled": false,
+    "wordlist_path": "",
+    "export_dir": "data/exports"
+  }
+}

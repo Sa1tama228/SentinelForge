@@ -1,0 +1,82 @@
+[
+  {
+    "cve": "CVE-2024-6387",
+    "service": "ssh",
+    "product": "openssh",
+    "min": "8.5",
+    "max": "9.7",
+    "desc": "regreSSHion: signal handler race in sshd leading to pre-auth RCE"
+  },
+  {
+    "cve": "CVE-2018-15473",
+    "service": "ssh",
+    "product": "openssh",
+    "min": "5.9",
+    "max": "7.7",
+    "desc": "OpenSSH user enumeration via malformed authentication packets"
+  },
+  {
+    "cve": "CVE-2021-44228",
+    "service": "http",
+    "product": "log4j",
+    "min": "2.0",
+    "max": "2.14",
+    "desc": "Log4Shell: JNDI lookup RCE in Apache Log4j (Server header heuristic)"
+  },
+  {
+    "cve": "CVE-2017-5638",
+    "service": "http",
+    "product": "struts",
+    "min": "2.0",
+    "max": "2.3.32",
+    "desc": "Apache Struts 2 S2-045 RCE via Content-Type header"
+  },
+  {
+    "cve": "CVE-2015-5199",
+    "service": "ftp",
+    "product": "vsftpd",
+    "min": "2.0",
+    "max": "3.0.2",
+    "desc": "vsftpd denial-of-service via crafted FTP commands"
+  },
+  {
+    "cve": "CVE-2019-11043",
+    "service": "http",
+    "product": "php-fpm",
+    "min": "7.0",
+    "max": "7.3.10",
+    "desc": "PHP-FPM under nginx: env_path_info RCE"
+  },
+  {
+    "cve": "CVE-2019-0708",
+    "service": "rdp",
+    "product": "microsoft",
+    "min": "0",
+    "max": "10.0.17763",
+    "desc": "BlueKeep: RDP pre-auth RCE via UAF in MS_T120 channel"
+  },
+  {
+    "cve": "CVE-2020-1938",
+    "service": "http",
+    "product": "tomcat",
+    "min": "9.0.0",
+    "max": "9.0.31",
+    "desc": "Ghostcat: AJP exploit reading/including webapps files"
+  },
+  {
+    "cve": "CVE-2022-22965",
+    "service": "http",
+    "product": "spring",
+    "min": "5.3.0",
+    "max": "5.3.17",
+    "desc": "Spring4Shell: RCE via data binding on JDK 9+"
+  },
+  {
+    "cve": "CVE-2019-10149",
+    "service": "smtp",
+    "product": "exim",
+    "min": "4.87",
+    "max": "4.91",
+    "desc": "Exim 'returning into' RCE (RCE on mail server)"
+  }
+]
