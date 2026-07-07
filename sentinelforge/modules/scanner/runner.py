@@ -1,5 +1,3 @@
-"""Scan orchestration: discovery + fingerprint + CVE match, persisted to DB
-with events emitted for the UI. ``run_async`` is the UI entry point."""
 from __future__ import annotations
 
 import json
@@ -14,6 +12,7 @@ from ...core import config, db, events, jobs
 from . import delta as scan_delta
 from . import discovery, fingerprint, nikto, probe, protocols, tech, udp_probe
 from .profiles import resolve_profile
+from .service_ports import looks_like_web_port
 from .vuln import correlation
 from .vuln.fingerprint_model import from_scan_result
 
@@ -42,6 +41,8 @@ def _target_policy_error(target: str, ip: str | None = None) -> str:
     allowlist = [str(item).strip().lower() for item in cfg.get("target_allowlist", []) if str(item).strip()]
     allowlist.extend(_scope_file_patterns(str(cfg.get("scope_file_path", "") or "")))
     target_l = (target or "").strip().lower()
+    # Scope checks run before any network work. This keeps accidental scans
+    # from reaching hosts that were not explicitly allowed.
     if allowlist and not any(fnmatch.fnmatch(target_l, pattern) for pattern in allowlist):
         return "target is outside scanner target_allowlist"
     if ip:
@@ -147,6 +148,8 @@ def _execute_impl(run_id: int, target: str, ports_spec: str, check_vulns: bool =
     existing_asset = db.asset_by_id(asset_id)
     previous_services = _json_load(existing_asset["open_services"] if existing_asset else "", [])
 
+    # Prefer ICMP/Scapy when available, then fall back to a cheap TCP probe so
+    # locked-down hosts are not treated as dead before the port scan runs.
     probe_data = {"engine": "off", "ok": None}
     if host_probe in {"auto", "scapy"}:
         probe_data = probe.scapy_ping(ip, timeout=min(timeout, 1.5))
@@ -199,6 +202,8 @@ def _execute_impl(run_id: int, target: str, ports_spec: str, check_vulns: bool =
         service, version = fingerprint.identify(port, banner)
         vuln_matches = []
         protocol_meta = protocols.extract_metadata(port, service, banner)
+        # Store both the display-oriented service fields and the structured
+        # fingerprint; CVE matching needs the latter, while the UI uses both.
         services.append(
             {
                 "port": port,
@@ -371,7 +376,12 @@ def _fmt_optional(value: float | None) -> str:
 
 
 def _is_web_service(port: int, service: str) -> bool:
-    return port in {80, 443, 8000, 8080, 8081, 8443, 8888} or str(service or "").lower() in nikto.WEB_SERVICES
+    service_l = str(service or "").lower()
+    return (
+        service_l in nikto.WEB_SERVICES
+        or service_l in {"https-alt"}
+        or looks_like_web_port(port)
+    )
 
 
 def _run_nikto_audit(run_id: int, target: str, port: int, service: str, *,

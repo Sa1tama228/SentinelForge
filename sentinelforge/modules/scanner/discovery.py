@@ -1,8 +1,3 @@
-"""TCP connect scanning with a bounded thread pool.
-
-Only connect probes and small protocol handshakes are performed. The scanner
-does not authenticate, brute force, fuzz paths, or exploit anything.
-"""
 from __future__ import annotations
 
 import re
@@ -18,9 +13,8 @@ from time import perf_counter
 from typing import Iterable
 
 from ...core.text import decode_network_text
+from .service_ports import HTTP_PORTS, looks_like_https_port
 
-_HTTP_PORTS = {80, 8000, 8080, 8081, 8888}
-_HTTPS_PORTS = {443, 8443}
 _MAX_PORTS_PER_SCAN = 65535
 _BANNER_LIMIT = 2048
 
@@ -35,9 +29,14 @@ def _probe(host: str, port: int, timeout: float, server_name: str | None = None)
     banner = ""
     try:
         sock.settimeout(timeout)
-        if port in _HTTPS_PORTS:
-            banner = _https_probe(sock, host=server_name or host, timeout=timeout)
-        elif port in _HTTP_PORTS:
+        # using protocol-specific low-impact handshakes only where they produce
+        # better evidence than a blind recv
+        if looks_like_https_port(port):
+            try:
+                banner = _https_probe(sock, host=server_name or host, timeout=timeout)
+            except OSError:
+                banner = ""
+        elif port in HTTP_PORTS:
             banner = _http_probe(sock, host=server_name or host)
         elif port in {25, 587}:
             banner = _line_probe(sock, b"EHLO sentinelforge.local\r\n", timeout)
@@ -183,6 +182,8 @@ def scan_ports(host: str, ports: Iterable[int], *,
     if not port_list:
         return []
     if engine in {"auto", "nmap"} and shutil.which("nmap"):
+        # Prefer nmap when it is available, but fall back to the socket scanner
+        # in auto mode if nmap returns no usable service rows.
         nmap_rows = _scan_with_nmap(host, port_list, timeout=timeout, extra_flags=nmap_extra_flags, cancel_event=cancel_event)
         if nmap_rows or engine == "nmap":
             return nmap_rows
@@ -228,6 +229,8 @@ def _scan_with_nmap(host: str, ports: list[int], *, timeout: float, extra_flags:
         )
         deadline = time.monotonic() + timeout_s
         while proc.poll() is None:
+            # Poll so cancellation from the UI can terminate the child process
+            # promptly instead of waiting for communicate() to return.
             if cancel_event is not None and cancel_event.is_set():
                 proc.terminate()
                 try:
@@ -277,13 +280,15 @@ def _nmap_extra_args(raw: str) -> list[str]:
         parts = shlex.split(raw, posix=False)
     except ValueError:
         return []
-    blocked_with_values = {"-oX", "-oA", "-oG", "-oN", "-oS", "-p", "-iL", "-iR"}
+    blocked_with_values = {"-oX", "-oA", "-oG", "-oN", "-oS", "-p", "-iL", "-iR"} # will add/reduce in the future
     blocked_prefixes = ("--script-args-file", "--exclude-file")
     out: list[str] = []
     idx = 0
     while idx < len(parts):
         part = parts[idx]
         flag = part.split("=", 1)[0]
+        # Keep target, port, and output ownership in this module even when
+        # advanced nmap timing flags are supplied from config
         if flag in blocked_with_values or any(flag.startswith(prefix) for prefix in blocked_prefixes):
             if "=" not in part:
                 idx += 2
@@ -301,7 +306,7 @@ def _nmap_extra_args(raw: str) -> list[str]:
 
 
 def parse_ports(spec: str) -> list[int]:
-    """Parse '22,80,1000-1003' into a sorted unique port list."""
+    # Accept comma-separated ports and ranges, then validate before any scan worker is started
     out: set[int] = set()
     for token in spec.replace(" ", "").split(","):
         if not token:
