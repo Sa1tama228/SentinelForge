@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 
 from .. import config
@@ -18,18 +19,45 @@ def vulnerability_source_freshness(max_age_hours: int = 48) -> list[dict]:
     out: list[dict] = []
     current = datetime.now(timezone.utc)
     for row in vulnerability_sources():
+        source_timestamp = _parse_source_version_timestamp(row["source_version"] or "")
         last_success = row["last_success_ts"] or ""
         age_hours = None
         stale = True
-        if last_success:
+        freshness_basis = "source_version" if source_timestamp is not None else "last_success_ts"
+        if source_timestamp is not None:
+            age_hours = round((current - source_timestamp).total_seconds() / 3600, 2)
+            stale = age_hours > max_age_hours
+        elif last_success:
             try:
                 parsed = datetime.strptime(last_success, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                 age_hours = round((current - parsed).total_seconds() / 3600, 2)
                 stale = age_hours > max_age_hours
             except ValueError:
                 stale = True
-        out.append({**dict(row), "age_hours": age_hours, "stale": stale})
+        out.append({**dict(row), "age_hours": age_hours, "stale": stale, "freshness_basis": freshness_basis})
     return out
+
+
+def _parse_source_version_timestamp(value: str):
+    from datetime import datetime, timezone
+
+    candidates = []
+    for match in re.finditer(
+        r"\d{4}-\d{2}-\d{2}[T ][0-2]\d:[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?",
+        value or "",
+    ):
+        raw = match.group(0).replace(" ", "T")
+        raw = re.sub(r"(\.\d{6})\d+", r"\1", raw)
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        candidates.append(parsed.astimezone(timezone.utc))
+    return max(candidates) if candidates else None
 
 
 def update_vulnerability_source(name: str, *, enabled: bool | None = None,

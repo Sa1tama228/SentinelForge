@@ -1,24 +1,18 @@
-"""Service + version fingerprinting from port number and banner text."""
 from __future__ import annotations
-
+from .service_ports import _PORT_SERVICE, looks_like_https_port
 import re
-
-# Well-known port -> default service name.
-_PORT_SERVICE = {
-    21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns", 80: "http",
-    110: "pop3", 143: "imap", 443: "https", 445: "smb", 1433: "mssql",
-    3306: "mysql", 3389: "rdp", 5432: "postgresql", 5900: "vnc",
-    6379: "redis", 8080: "http-proxy", 8443: "https-alt", 27017: "mongodb",
-}
 
 
 def identify(port: int, banner: str) -> tuple[str, str]:
     """Return (service, version) guessed from port + banner."""
-    service = _PORT_SERVICE.get(port, "unknown")
+    service = _PORT_SERVICE.get(port, "unknown") # This is only a fallback when banner evidence are weak
     version = ""
 
     b = banner or ""
     low = b.lower()
+    is_tls_port = looks_like_https_port(port)
+    is_tls_http = "tls cert " in low or " tls_version=" in low or " alpn=" in low
+    is_http = low.startswith("http/") or "\nhttp/" in low or "server:" in low
 
     # SSH:  SSH-2.0-OpenSSH_8.9p1 Ubuntu-...
     m = re.search(r"SSH-[\d.]+-(\S+?)_([\w.+-]+)", b)
@@ -38,17 +32,21 @@ def identify(port: int, banner: str) -> tuple[str, str]:
         return service, version
 
     # HTTP Server header. Keep the full server token for display, but normalize
-    # common "product/version" formats so the CVE matcher has something useful.
+    # common "product/version" formats so the CVE matcher has something useful
     m = re.search(r"server:\s*([^\r\n]+)", low)
     if m:
         server = m.group(1).strip()
-        service = "https" if port in (443, 8443) else "http"
+        service = "https" if is_tls_http or is_tls_port else "http"
         version = _normalize_product_version(server)
         return service, version
     m = re.search(r"(apache|nginx|microsoft-iis|openresty|litespeed|caddy)[/\s-]*(\d[\w.\-]+)", low)
     if m:
-        service = "https" if port in (443, 8443) else "http"
+        service = "https" if is_tls_http or is_tls_port else "http"
         return service, f"{m.group(1)} {m.group(2)}"
+    if is_tls_http:
+        return "https", ""
+    if is_http:
+        return "http", ""
 
     # MySQL / Redis / SMTP / etc. banner keywords
     if "udp response" in low:

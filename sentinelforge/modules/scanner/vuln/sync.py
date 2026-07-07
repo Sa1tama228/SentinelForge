@@ -1,8 +1,3 @@
-"""Local vulnerability enrichment import helpers.
-
-The synchronizer is cache-first: failed imports update source status but never
-delete previously imported data.
-"""
 from __future__ import annotations
 
 import csv
@@ -19,7 +14,7 @@ from . import advisories
 from . import correlation
 
 CVE_ALIASES = ("cve", "cve_id", "cveID", "CVE", "id", "CVE_data_meta.ID", "cve.id")
-DATE_ALIASES = ("date", "score_date", "published", "date_published", "published_ts")
+DATE_ALIASES = ("date", "score_date", "published", "date_published", "published_ts", "timestamp")
 
 IMPORT_FORMATS = {
     "nvd_json": {
@@ -162,7 +157,7 @@ def set_source_enabled(name: str, enabled: bool) -> None:
         sync_progress=0.0,
     )
 
-
+# TODO: switch to sqlalchemy
 def import_nvd_json(path: str | Path) -> int:
     source = "nvd"
     try:
@@ -175,7 +170,7 @@ def import_nvd_json(path: str | Path) -> int:
                 if not vulnerabilities:
                     continue
                 if isinstance(payload, dict):
-                    source_versions.add(str(payload.get("version") or payload.get("format") or "vulnerability-json"))
+                    source_versions.add(_payload_source_version(payload))
                 for item in vulnerabilities:
                     cve = item.get("cve", item)
                     cve_id = (_first_value(cve, *CVE_ALIASES) or _first_value(item, *CVE_ALIASES)).upper()
@@ -486,6 +481,20 @@ def _json_records(payload, *keys: str) -> list[dict]:
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]
     return [payload] if any(_first_value(payload, *CVE_ALIASES) for _ in [0]) else []
+
+
+def _payload_source_version(payload: dict) -> str:
+    timestamp = _first_value(
+        payload,
+        "timestamp",
+        "lastModifiedDate",
+        "lastModified",
+        "dateModified",
+        "metadata.timestamp",
+    )
+    if timestamp:
+        return timestamp
+    return str(payload.get("version") or payload.get("format") or "vulnerability-json")
 
 
 def _vulnerability_items(payload) -> list[dict]:

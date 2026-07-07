@@ -1,4 +1,3 @@
-"""Protocol-specific metadata extraction from safe banner evidence."""
 from __future__ import annotations
 
 import re
@@ -7,7 +6,7 @@ import re
 def extract_metadata(port: int, service: str, banner: str) -> dict:
     service_l = (service or "").lower()
     text = banner or ""
-    if service_l in {"http", "https", "http-proxy", "https-alt"} or port in {80, 443, 8000, 8080, 8081, 8443, 8888}:
+    if service_l in {"http", "https", "http-proxy", "https-alt"} or _looks_like_http_banner(text):
         return _http_metadata(text)
     if service_l == "ssh" or port == 22:
         return _ssh_metadata(text)
@@ -22,6 +21,11 @@ def extract_metadata(port: int, service: str, banner: str) -> dict:
     if service_l == "postgresql" or port == 5432:
         return {"protocol": "postgresql", "signals": ["open-postgresql-service"]}
     return {"protocol": service_l or "unknown", "signals": []}
+
+
+def _looks_like_http_banner(text: str) -> bool:
+    low = (text or "").lower()
+    return low.startswith("http/") or "\nhttp/" in low or "server:" in low or "tls cert " in low
 
 
 def _http_metadata(text: str) -> dict:
