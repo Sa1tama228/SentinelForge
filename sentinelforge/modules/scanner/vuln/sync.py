@@ -144,8 +144,7 @@ def sync_configured_sources() -> dict[str, int]:
             continue
         counts[source_name] = _run_with_retries(source_name, importer, path)
     if "nvd" not in counts and not nvd_disabled:
-        correlation.seed_demo_cache()
-        counts["nvd"] = db.vulnerability_record_counts().get("cves", 0)
+        counts["bundled-demo"] = correlation.seed_demo_cache()
     return counts
 
 
@@ -406,6 +405,7 @@ def _run_with_retries(source_name: str, importer, path: str) -> int:
     attempts = 0
     max_attempts = 3
     last_error = ""
+    last_exception: Exception | None = None
     while attempts < max_attempts:
         attempts += 1
         db.update_vulnerability_source(
@@ -417,6 +417,7 @@ def _run_with_retries(source_name: str, importer, path: str) -> int:
         try:
             return importer(path)
         except Exception as exc:
+            last_exception = exc
             last_error = str(exc)
             if attempts >= max_attempts:
                 break
@@ -438,7 +439,7 @@ def _run_with_retries(source_name: str, importer, path: str) -> int:
         sync_attempts=attempts,
         sync_progress=0.0,
     )
-    return 0
+    raise RuntimeError(f"{source_name} sync failed after {attempts} attempts: {last_error}") from last_exception
 
 
 def _json_payloads(path: str | Path, *, suffixes: tuple[str, ...]) -> Iterable[dict]:

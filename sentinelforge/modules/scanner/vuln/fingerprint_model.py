@@ -1,4 +1,3 @@
-"""Structured service fingerprint extraction for CVE exposure assessment."""
 from __future__ import annotations
 
 import re

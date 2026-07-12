@@ -1,4 +1,3 @@
-"""Graph-backed attack-path and entry-point analysis."""
 from __future__ import annotations
 
 import hashlib
@@ -57,8 +56,16 @@ def _vulnerability_paths(graph: EvidenceGraph, context: dict) -> list[dict]:
         local_status = advisory.get("local_status") or ""
         if local_status == "patched_by_distribution_advisory":
             continue
-        if status not in STRONG_MATCH_STATUSES and not (kev and confidence >= 0.45) and not (epss >= 0.7 and confidence >= 0.5):
+        # Keep CVE paths conservative: weak matches need independent threat
+        # pressure from KEV or high EPSS before they become attack paths.
+        strong_match = status in STRONG_MATCH_STATUSES
+        kev_supported = kev and confidence >= 0.45
+        epss_supported = epss >= 0.7 and confidence >= 0.5
+        if not (strong_match or kev_supported or epss_supported):
             continue
+
+        # The score is intentionally additive so the UI can show each reason
+        # that moved a path up: exposure, exploitability, and local evidence.
         score = 35 + (cvss * 4.0) + (confidence * 20.0)
         reasons = [f"{status.replace('_', ' ')}", f"confidence {confidence:.2f}", f"CVSS {cvss:.1f}"]
         if asset.data.get("internet_exposed"):

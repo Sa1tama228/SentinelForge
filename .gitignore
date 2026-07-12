@@ -6,3 +6,17 @@ __pycache__/
 data/*.db
 data/*.sqlite
 data/config.json
+
+# Local credentials and runtime artifacts
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.session
+*.log
+.git
+.codex
+.agents

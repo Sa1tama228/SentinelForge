@@ -1,4 +1,3 @@
-"""Text helpers for network bytes and stored evidence."""
 from __future__ import annotations
 
 _DECODE_CANDIDATES = ("utf-8-sig", "utf-8", "cp1251", "latin-1")

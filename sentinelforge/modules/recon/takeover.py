@@ -1,8 +1,3 @@
-"""Dangling DNS takeover heuristics.
-
-These are conservative hints, not proof of takeover. They flag CNAMEs pointing
-at common hosted platforms that often require ownership validation.
-"""
 from __future__ import annotations
 
 _PATTERNS = {

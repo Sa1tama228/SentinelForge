@@ -1,4 +1,3 @@
-"""Lightweight in-process scan scheduler."""
 from __future__ import annotations
 
 import threading

@@ -1,8 +1,3 @@
-"""SQLite storage layer. One module-level connection guarded by a lock.
-
-Schema mirrors the three toolkit domains: honeypot events, scan results,
-recon targets and findings.
-"""
 from __future__ import annotations
 
 import json

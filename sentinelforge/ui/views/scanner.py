@@ -1,4 +1,3 @@
-"""Scanner view: scan launcher, schedules, active runs, and results."""
 from __future__ import annotations
 
 from datetime import datetime, timezone

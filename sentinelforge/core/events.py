@@ -1,9 +1,3 @@
-"""Tiny thread-safe pub/sub used to push notifications to the UI.
-
-Background threads (honeypot servers, scan workers) `emit` events; the
-Flet views `subscribe` and refresh themselves. Keeps UI code decoupled
-from worker code without dragging in asyncio.
-"""
 from __future__ import annotations
 
 import threading

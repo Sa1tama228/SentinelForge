@@ -1,4 +1,3 @@
-"""Optional host reachability checks for scanner runs."""
 from __future__ import annotations
 
 import socket

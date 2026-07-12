@@ -1,8 +1,3 @@
-"""Safe verification guidance for CVE exposure candidates.
-
-This module intentionally returns non-destructive manual/probe suggestions. It
-does not execute exploit code.
-"""
 from __future__ import annotations
 
 

@@ -1,6 +1,6 @@
-"""Safe HTTP exposure checks for common files/endpoints."""
 from __future__ import annotations
 
+import re
 import urllib.error
 import urllib.request
 
@@ -17,11 +17,16 @@ CHECKS = {
 
 
 def check(domain: str, *, ua: str, timeout: float = 5.0) -> dict:
-    base = domain if domain.startswith("http") else "https://" + domain
+    base = domain if domain.startswith(("http://", "https://")) else "https://" + domain
     results = []
     for path, (severity, title) in CHECKS.items():
         url = base.rstrip("/") + path
-        status, sample, final_url = _head_or_get(url, ua=ua, timeout=timeout)
+        status, sample, final_url = _head_or_get(
+            url,
+            ua=ua,
+            timeout=timeout,
+            fetch_body=path not in {"/robots.txt", "/sitemap.xml"},
+        )
         if status is None:
             continue
         if _interesting(path, status, sample):
@@ -39,16 +44,29 @@ def check(domain: str, *, ua: str, timeout: float = 5.0) -> dict:
     return {"checks": results, "count": len(results)}
 
 
-def _head_or_get(url: str, *, ua: str, timeout: float) -> tuple[int | None, str, str]:
+def _head_or_get(url: str, *, ua: str, timeout: float,
+                 fetch_body: bool = True) -> tuple[int | None, str, str]:
     req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": ua})
+    head_status = None
+    final_url = url
     try:
         with net.opener(url).open(req, timeout=timeout) as resp:
-            return resp.status, "", resp.geturl()
+            head_status = resp.status
+            final_url = resp.geturl()
     except urllib.error.HTTPError as exc:
-        if exc.code not in {405, 403, 401, 200}:
+        head_status = exc.code
+        final_url = exc.geturl()
+        if exc.code not in {200, 206, 401, 403, 405}:
             return exc.code, "", url
     except Exception:
         return None, "", url
+    if head_status not in {200, 206, 401, 403, 405}:
+        return head_status, "", final_url
+    if not fetch_body and head_status != 405:
+        return head_status, "", final_url
+
+    # HEAD is useful for avoiding unnecessary bodies, but sensitive-file
+    # checks need bounded content evidence before they can become findings.
     req = urllib.request.Request(url, method="GET", headers={"User-Agent": ua})
     try:
         with net.opener(url).open(req, timeout=timeout) as resp:
@@ -69,10 +87,26 @@ def _interesting(path: str, status: int, sample: str) -> bool:
     if path in {"/robots.txt", "/sitemap.xml"}:
         return status == 200
     if path == "/.git/HEAD":
-        return status == 200 or "ref:" in sample.lower()
+        text = sample.strip()
+        return status in {200, 206} and bool(
+            re.search(r"^ref:\s+refs/", text, flags=re.I)
+            or re.fullmatch(r"[0-9a-f]{40,64}", text, flags=re.I)
+        )
     if path == "/.env":
-        low = sample.lower()
-        return status == 200 and ("=" in sample or "secret" in low or "password" in low)
+        return status in {200, 206} and _looks_like_env(sample)
     if path == "/server-status":
-        return status in {200, 401, 403}
+        low = sample.lower()
+        markers = ("apache server status", "server version:", "server uptime:")
+        return status in {200, 206} and any(marker in low for marker in markers)
     return False
+
+
+def _looks_like_env(sample: str) -> bool:
+    assignments = 0
+    for line in (sample or "").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_.-]*\s*=", stripped):
+            assignments += 1
+    return assignments > 0

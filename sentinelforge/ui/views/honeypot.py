@@ -1,4 +1,3 @@
-"""Honeypot control panel: start/stop servers, live attack feed, stats."""
 from __future__ import annotations
 
 import json

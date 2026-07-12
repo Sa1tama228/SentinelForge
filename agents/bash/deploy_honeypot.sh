@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# SentinelForge :: deploy the Python honeypots as a systemd service on Linux.
-#
-# Usage:  sudo ./deploy_honeypot.sh install | start | stop | status | uninstall
-#
-# Deploy only on hosts you own. Edit SF_DIR / SF_USER below to match your setup.
 
 set -euo pipefail
 

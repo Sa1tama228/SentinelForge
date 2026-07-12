@@ -1,9 +1,3 @@
-"""Local mini CVE database matching.
-
-The bundled ``cve_db.json`` is a tiny, hand-curated set of well-known
-vulnerabilities — enough to demonstrate the matching pipeline. A real
-deployment would sync from NVD. Versions are compared numerically.
-"""
 from __future__ import annotations
 
 import json

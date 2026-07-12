@@ -128,7 +128,9 @@ def _normalize_banner(banner: str, latency_ms: int) -> str:
 
 
 def _clean_banner_text(banner: str) -> str:
-    text = (banner or "").replace("\r", "\n")
+    # Normalize a CRLF pair once. Replacing each carriage return separately
+    # creates a false blank line after every HTTP header.
+    text = (banner or "").replace("\r\n", "\n").replace("\r", "\n")
     if "\x00" in text:
         return _clean_binary_banner(text)
     return _strip_control_noise(text).strip()

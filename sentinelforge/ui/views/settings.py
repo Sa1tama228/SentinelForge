@@ -1,4 +1,3 @@
-"""Application settings: scanner/recon engines and proxy configuration."""
 from __future__ import annotations
 
 import importlib.util

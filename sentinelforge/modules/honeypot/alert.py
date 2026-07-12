@@ -1,4 +1,3 @@
-"""Local sound alerts for honeypot activity."""
 from __future__ import annotations
 
 import subprocess

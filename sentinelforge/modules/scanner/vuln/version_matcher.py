@@ -1,4 +1,3 @@
-"""Conservative version comparison and affected-range evaluation."""
 from __future__ import annotations
 
 import re
@@ -74,6 +73,8 @@ def _parse(value: str):
             return ("packaging", Version(_normalize_for_packaging(token)))
         except InvalidVersion:
             pass
+    # Some service banners use vendor suffixes that packaging.version rejects.
+    # Fall back to numeric parts plus suffix rank instead of guessing UNKNOWN.
     parts = _numeric_parts(token)
     if not parts:
         return None
@@ -87,10 +88,13 @@ def _extract_version_token(value: str) -> str:
 
 
 def _normalize_for_packaging(token: str) -> str:
+    # Translate common distro/banner notation into PEP 440-ish syntax before
+    # handing it to packaging.version.
     token = token.replace("_", ".")
     token = re.sub(r"(?<=\d)p(?=\d)", ".post", token)
-    if ":" in token:
-        token = token.split(":", 1)[1]
+    # Debian and RPM-style numeric epochs have higher precedence than the
+    # upstream version. PEP 440 represents the same concept with `!`.
+    token = re.sub(r"^(\d+):", r"\1!", token)
     token = token.replace("~", ".dev")
     return token
 

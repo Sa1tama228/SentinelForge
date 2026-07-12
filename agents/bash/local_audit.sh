@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# SentinelForge :: quick local audit on a Linux host you own.
-# Defensive only — reports listening ports, sshd hardening, fail2ban and
-# world-writable files under /etc.
 
 set -u
 

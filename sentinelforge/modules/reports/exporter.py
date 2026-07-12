@@ -1,4 +1,3 @@
-"""Export asset and finding inventory in analyst-friendly formats."""
 from __future__ import annotations
 
 import csv

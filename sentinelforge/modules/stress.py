@@ -1,4 +1,3 @@
-"""Synthetic data generation and benchmark helpers."""
 from __future__ import annotations
 
 import json

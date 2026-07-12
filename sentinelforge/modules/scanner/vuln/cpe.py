@@ -1,4 +1,3 @@
-"""CPE candidate generation."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,6 +20,8 @@ def candidates_for(raw_product: str, *, raw_service: str = "") -> list[CPECandid
     candidates: list[CPECandidate] = []
     seen: set[str] = set()
     for override in db.cpe_product_overrides(_cache_lookup_token(raw_product) or raw_product):
+        # Human-reviewed overrides win because product banners often do not
+        # match official CPE vendor/product names.
         seen.add(override["cpe_uri"])
         candidates.append(
             CPECandidate(
@@ -48,6 +49,8 @@ def candidates_for(raw_product: str, *, raw_service: str = "") -> list[CPECandid
         for cached in db.cpe_products_for_product(product.product, vendor=product.vendor, limit=20):
             if cached["cpe_uri"] in seen:
                 continue
+            # Cached rows are useful enrichment, but weaker than the alias that
+            # directly matched the observed product.
             seen.add(cached["cpe_uri"])
             candidates.append(
                 CPECandidate(
@@ -64,6 +67,8 @@ def candidates_for(raw_product: str, *, raw_service: str = "") -> list[CPECandid
         for cached in db.cpe_products_for_product(token, limit=20):
             if cached["cpe_uri"] in seen:
                 continue
+            # Last-resort token matches stay modest confidence so later scoring
+            # does not treat them like reviewed mappings.
             seen.add(cached["cpe_uri"])
             candidates.append(
                 CPECandidate(

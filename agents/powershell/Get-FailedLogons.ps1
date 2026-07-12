@@ -1,17 +1,3 @@
-<#
-.SYNOPSIS
-    SentinelForge agent — dump recent failed logon attempts (EventID 4625).
-
-.DESCRIPTION
-    Complements the honeypot telemetry on a Windows host you own by surfacing
-    real brute-force attempts from the Security event log. Run elevated.
-
-.PARAMETER Hours
-    How far back to look (default 24).
-
-.EXAMPLE
-    .\Get-FailedLogons.ps1 -Hours 6
-#>
 [CmdletBinding()]
 param(
     [int]$Hours = 24

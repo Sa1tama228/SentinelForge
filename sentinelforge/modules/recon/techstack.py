@@ -1,9 +1,3 @@
-"""HTTP-based technology fingerprinting.
-
-Fetches the site once, then matches header/body signatures against a
-small rule set. Passive from the target's POV (a single GET, no probing
-of odd paths).
-"""
 from __future__ import annotations
 
 import re
@@ -36,7 +30,7 @@ _SIGNATURES = [
 
 
 def detect(url: str, timeout: float = 10.0, ua: str = "SentinelForge-Recon/0.1") -> dict:
-    if not url.startswith("http"):
+    if not url.startswith(("http://", "https://")):
         url = "https://" + url
     attempts = [url]
     if url.startswith("https://"):

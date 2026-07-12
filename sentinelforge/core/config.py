@@ -1,4 +1,3 @@
-"""Application configuration: persisted JSON next to the data dir."""
 from __future__ import annotations
 
 import json

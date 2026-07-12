@@ -1,4 +1,3 @@
-"""Quality scoring for vulnerability and recon evidence sources."""
 from __future__ import annotations
 
 from ...core import db
@@ -30,6 +29,8 @@ def vulnerability_source_scores(max_age_hours: int = 48) -> list[dict]:
         name = row["name"]
         score = _VULN_BASE.get(name, 0.55)
         reasons = [f"base={score:.2f}"]
+        # Penalize freshness and sync health without changing the source's
+        # baseline trust score permanently.
         if not row["enabled"]:
             score *= 0.5
             reasons.append("disabled")
@@ -61,6 +62,8 @@ def recon_source_scores(target_id: int | None = None) -> list[dict]:
         name = row["source_name"]
         score = _RECON_BASE.get(name, 0.55)
         reasons = [f"base={score:.2f}"]
+        # Recon collectors fail independently, so score each source on its own
+        # last run instead of treating the whole recon target as bad.
         if row["status"] != "ok":
             score *= 0.65
             reasons.append(f"status={row['status']}")

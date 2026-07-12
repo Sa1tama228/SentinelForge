@@ -1,8 +1,3 @@
-"""Optional Nikto web-audit integration.
-
-Nikto is an external Perl tool. SentinelForge treats its output as supporting
-web-audit evidence, not as confirmed exploitation proof.
-"""
 from __future__ import annotations
 
 import csv

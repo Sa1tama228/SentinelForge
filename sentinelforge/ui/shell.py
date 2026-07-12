@@ -1,4 +1,3 @@
-"""Main Flet shell: sidebar navigation that swaps between module views."""
 from __future__ import annotations
 
 import os

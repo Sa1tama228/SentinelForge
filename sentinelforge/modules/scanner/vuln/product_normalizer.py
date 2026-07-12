@@ -1,4 +1,3 @@
-"""Product normalization for vulnerability correlation."""
 from __future__ import annotations
 
 import json

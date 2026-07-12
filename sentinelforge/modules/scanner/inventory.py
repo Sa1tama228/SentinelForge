@@ -1,8 +1,3 @@
-"""Authenticated inventory import helpers.
-
-These parsers consume files produced outside SentinelForge, such as `dpkg -l`,
-`rpm -qa`, Windows software CSV exports, or CycloneDX JSON SBOMs.
-"""
 from __future__ import annotations
 
 import csv

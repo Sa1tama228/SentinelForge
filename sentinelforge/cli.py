@@ -1,4 +1,3 @@
-"""Command-line interface for SentinelForge."""
 from __future__ import annotations
 
 import argparse

@@ -1,14 +1,3 @@
-<#
-.SYNOPSIS
-    SentinelForge agent — quick local hardening/audit checks on a Windows host.
-
-.DESCRIPTION
-    Defensive only. Reports listening TCP ports, firewall state, SMBv1 status
-    and members of the local Administrators group. Run elevated.
-
-.EXAMPLE
-    .\Invoke-LocalAudit.ps1
-#>
 [CmdletBinding()]
 param()
 

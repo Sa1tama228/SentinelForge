@@ -1,5 +1,3 @@
-"""Recon orchestration: run all passive collectors for a domain, persist
-findings, and emit events for the UI."""
 from __future__ import annotations
 
 import re

@@ -1,13 +1,3 @@
-"""Threaded honeypot servers (HTTP / SSH / FTP).
-
-Each server is a ``socketserver.ThreadingTCPServer`` running in its own
-thread. Incoming connections are logged to the DB and announced on the
-``honeypot`` event channel so the UI can refresh in real time.
-
-These are *low-interaction* honeypots: they pretend to be a real service
-just enough to capture the attacker's first moves, then close. Deploy
-only on hosts you own.
-"""
 from __future__ import annotations
 
 import ssl
@@ -88,6 +78,8 @@ def _http_response_for(path: str) -> tuple[str, str, bytes, dict]:
         if not isinstance(route, dict):
             continue
         if (route.get("path") or "").strip() == clean_path:
+            # Route-specific bodies let operators emulate a service surface
+            # without adding handler branches.
             route_body = _read_html_file(str(route.get("html_path") or ""))
             if route_body is None:
                 route_body = str(route.get("body") or "").encode("utf-8", "replace")[:262_144]
@@ -123,6 +115,8 @@ def _http_extra_headers(extra: dict | None = None) -> str:
         return ""
     lines = []
     for key, value in headers.items():
+        # Header values are config-driven, so strip CR/LF to prevent response
+        # splitting while still allowing simple custom headers.
         clean_key = str(key).replace("\r", "").replace("\n", "").strip()
         clean_value = str(value).replace("\r", "").replace("\n", "").strip()
         if clean_key and clean_value:
@@ -131,7 +125,8 @@ def _http_extra_headers(extra: dict | None = None) -> str:
 
 
 def _record(hp_type: str, ip: str, port: int, **fields) -> None:
-    """Persist an event and notify the UI."""
+    # Enrich before persistence so DB rows, UI events, and alerts agree on the
+    # same classification and IOC extraction.
     data = enrichment.enrich_event(
         hp_type,
         ip,
@@ -186,6 +181,8 @@ def _stored_body(body: str, *, hp_type: str) -> str:
     if mode in {"do_not_store", "none", "off"}:
         return ""
     if mode in {"hash_only", "hash"}:
+        # Hash-only mode preserves correlation across attempts without storing
+        # the submitted secret itself.
         digest = hashlib.sha256((body or "").encode("utf-8", "replace")).hexdigest()
         return f"sha256:{digest}" if body else ""
     if hp_type in {"http", "https"}:

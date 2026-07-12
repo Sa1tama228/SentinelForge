@@ -1,4 +1,3 @@
-"""Project health checks for local environment, config, and storage."""
 from __future__ import annotations
 
 import os

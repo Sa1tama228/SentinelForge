@@ -1,4 +1,3 @@
-"""Historical recon diff helpers."""
 from __future__ import annotations
 
 

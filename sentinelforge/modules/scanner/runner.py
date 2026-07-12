@@ -39,10 +39,20 @@ def _resolve(host: str) -> str | None:
 def _target_policy_error(target: str, ip: str | None = None) -> str:
     cfg = config.load().get("scanner", {})
     allowlist = [str(item).strip().lower() for item in cfg.get("target_allowlist", []) if str(item).strip()]
-    allowlist.extend(_scope_file_patterns(str(cfg.get("scope_file_path", "") or "")))
+    scope_path = str(cfg.get("scope_file_path", "") or "").strip()
+    if scope_path:
+        try:
+            scope_patterns = _scope_file_patterns(scope_path)
+        except (OSError, UnicodeError) as exc:
+            # A broken scope source must narrow access, never turn an allowlist
+            # configuration error into permission to scan arbitrary targets.
+            return f"scanner scope file could not be read: {exc}"
+        allowlist.extend(scope_patterns)
+        if not allowlist:
+            return "configured scanner scope file contains no target patterns"
     target_l = (target or "").strip().lower()
-    # Scope checks run before any network work. This keeps accidental scans
-    # from reaching hosts that were not explicitly allowed.
+    # Check the textual allowlist before resolution. Address policy is applied
+    # after DNS returns the concrete destination used by the scanner.
     if allowlist and not any(fnmatch.fnmatch(target_l, pattern) for pattern in allowlist):
         return "target is outside scanner target_allowlist"
     if ip:
@@ -62,10 +72,7 @@ def _scope_file_patterns(path_value: str) -> list[str]:
     if not path_value:
         return []
     path = Path(path_value).expanduser()
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
+    lines = path.read_text(encoding="utf-8").splitlines()
     patterns = []
     for raw in lines:
         line = raw.split("#", 1)[0].strip().lower()
@@ -281,7 +288,7 @@ def _execute_impl(run_id: int, target: str, ports_spec: str, check_vulns: bool =
                 match_status=match.match_status,
             ):
                 continue
-            evidence_text = _finding_evidence_text(target, port, service, version, banner, match)
+            evidence_text = _finding_evidence_text(target, port, proto, service, version, banner, match)
             finding_id = db.upsert_finding(
                 title=f"{match.cve_id} {match.match_status.replace('_', ' ')} on {service}:{port}",
                 severity=match.severity,
@@ -290,7 +297,13 @@ def _execute_impl(run_id: int, target: str, ports_spec: str, check_vulns: bool =
                 evidence=evidence_text,
                 source_module="scanner",
                 remediation=match.remediation,
-                fingerprint=correlation.finding_fingerprint(target, port, match.cve_id, match.matched_cpe),
+                fingerprint=correlation.finding_fingerprint(
+                    target,
+                    port,
+                    match.cve_id,
+                    match.matched_cpe,
+                    proto=proto,
+                ),
             )
             correlation.persist_match(
                 match,
@@ -350,7 +363,7 @@ def _cancelled(run_id: int) -> int:
     return run_id
 
 
-def _finding_evidence_text(target: str, port: int, service: str, version: str, banner: str,
+def _finding_evidence_text(target: str, port: int, proto: str, service: str, version: str, banner: str,
                            match: correlation.CorrelationMatch) -> str:
     label = {
         "confirmed_candidate": "Potentially affected",
@@ -359,7 +372,7 @@ def _finding_evidence_text(target: str, port: int, service: str, version: str, b
         "unknown": "Insufficient version evidence",
     }.get(match.match_status, "Manual verification required")
     return (
-        f"{label}: {service} {version or 'unknown'} on {target} tcp/{port}. "
+        f"{label}: {service} {version or 'unknown'} on {target} {proto}/{port}. "
         f"Matched CPE: {match.matched_cpe}. "
         f"Confidence: {match.confidence_score:.2f} ({match.confidence_label}). "
         f"Priority: {match.priority_score:.2f}. "

@@ -1,4 +1,3 @@
-"""SentinelForge entry point."""
 import logging
 
 from sentinelforge.ui import shell

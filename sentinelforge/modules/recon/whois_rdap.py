@@ -1,8 +1,3 @@
-"""WHOIS via RDAP (Registration Data Access Protocol).
-
-RDAP is the modern, machine-readable replacement for WHOIS and needs no
-third-party library — just a JSON HTTP GET to the bootstrap registry.
-"""
 from __future__ import annotations
 
 import json

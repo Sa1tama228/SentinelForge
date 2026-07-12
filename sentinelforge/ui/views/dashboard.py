@@ -1,4 +1,3 @@
-"""Dashboard: aggregate counters across all modules."""
 from __future__ import annotations
 
 import flet as ft

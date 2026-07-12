@@ -1,8 +1,3 @@
-"""Scanner profile definitions.
-
-Profiles keep the UI and runner aligned without hiding the actual requested
-ports. They are conservative presets for authorized scanning only.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass

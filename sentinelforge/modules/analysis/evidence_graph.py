@@ -1,4 +1,3 @@
-"""In-memory evidence graph for cross-module security analysis."""
 from __future__ import annotations
 
 import ipaddress
@@ -119,6 +118,8 @@ def build(limit_assets: int = 10000, *, honeypot_limit: int = 500) -> EvidenceGr
     asset_by_host: dict[str, EvidenceNode] = {}
     service_nodes: dict[tuple[int, str, int], EvidenceNode] = {}
     for row in asset_rows:
+        # Normalize DB rows once at the boundary so later graph code can work
+        # with normal Python lists/dicts instead of JSON strings.
         asset = _asset_dict(row)
         node = graph.add_node(
             "asset",
@@ -381,6 +382,8 @@ def _honeypot_surface_signals(graph: EvidenceGraph) -> dict[str, EvidenceEdge]:
         if any(token in path for token in ("wp-login", "phpmyadmin", "admin", "login")):
             candidates.append(("web", 0.75, "honeypot observed web admin/login probing"))
         for key, confidence, reason in candidates:
+            # Keep only the strongest signal per surface so one noisy honeypot
+            # stream cannot flood every matching asset with duplicate edges.
             edge = EvidenceEdge(signal.id, "*", "activity_relevant_to_surface", confidence, {"reason": reason})
             if key not in out or edge.confidence > out[key].confidence:
                 out[key] = edge

@@ -1,4 +1,3 @@
-"""Small, conservative UDP probes for common discovery ports."""
 from __future__ import annotations
 
 import socket

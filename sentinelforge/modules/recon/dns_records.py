@@ -1,4 +1,3 @@
-"""DNS record enumeration and lightweight DNS posture checks via dnspython."""
 from __future__ import annotations
 
 import dns.resolver

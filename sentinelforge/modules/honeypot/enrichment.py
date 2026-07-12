@@ -1,4 +1,3 @@
-"""Honeypot event enrichment: classification, IOCs, and optional GeoIP/ASN."""
 from __future__ import annotations
 
 import csv
@@ -34,6 +33,8 @@ def enrich_event(hp_type: str, src_ip: str, method: str, path: str, headers: str
 
 def classify(hp_type: str, method: str, path: str, headers: str, body: str) -> str:
     low = "\n".join([hp_type, method, path, headers, body]).lower()
+    # Order matters: credential and relay attempts are more actionable than a
+    # generic scanner label, even if the payload names a known tool.
     if hp_type in {"telnet", "ftp", "ssh"} and any(k in low for k in ("pass", "password", "user ", "login")):
         return "credential-attempt"
     if hp_type == "smtp" and any(k in low for k in ("mail from:", "rcpt to:", "auth ", "relay")):
@@ -78,6 +79,8 @@ def extract_credentials(hp_type: str, method: str, path: str, headers: str, body
     out = []
     low_body = body.lower()
     if hp_type in {"telnet", "ftp"} and path:
+        # Keep attempted usernames for triage, but never persist submitted
+        # passwords from low-interaction probes.
         out.append({"service": hp_type, "username": path.replace("USER ", "").strip(), "password": "<redacted>"})
     if hp_type in {"http", "https"} and method.upper() == "POST":
         user = _form_value(body, ("username", "user", "login", "email"))
@@ -140,6 +143,8 @@ def geo_lookup(ip: str) -> dict:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return {}
+    # Geo enrichment is intentionally offline; operators can bring their own
+    # CSV/JSON network map without making per-event network calls.
     for row in _geo_rows(db_path):
         try:
             network = ipaddress.ip_network(row.get("cidr", ""), strict=False)

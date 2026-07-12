@@ -1,4 +1,3 @@
-"""Offline CVE exposure correlation against local CPE/version data."""
 from __future__ import annotations
 
 import hashlib
@@ -43,16 +42,23 @@ class CorrelationMatch:
     evidence: dict
 
 
-def seed_demo_cache() -> None:
-    """Load the bundled demo CVEs into the normalized vulnerability cache.
-
-    This is intentionally local and idempotent. It gives the new correlation
-    engine useful offline data until a full NVD synchronizer is wired in.
-    """
+def seed_demo_cache() -> int:
+    # Load a small local CVE set so correlation still works before an external
+    # vulnerability feed has been imported.
     entries = _demo_entries()
     imported = 0
+    available = 0
     for entry in entries:
         cve_id = entry["cve"]
+        with db.cursor() as cursor:
+            cursor.execute("SELECT source_name FROM cves WHERE cve_id=?", (cve_id,))
+            existing = cursor.fetchone()
+        if existing:
+            if existing["source_name"] == "bundled-demo":
+                available += 1
+            # Demo rows are a last-resort offline aid. They neither overwrite
+            # authoritative CVEs nor refresh existing demo data on every scan.
+            continue
         description = entry.get("desc", "")
         title = description.split(":", 1)[0] if ":" in description else cve_id
         product = entry.get("product", "")
@@ -91,13 +97,16 @@ def seed_demo_cache() -> None:
                 version_end_including=entry.get("max", ""),
             )
         imported += 1
-    db.update_vulnerability_source(
-        "nvd",
-        source_version="bundled-demo",
-        status="offline-cache-ready",
-        record_count=imported,
-        success=True,
-    )
+        available += 1
+    if imported:
+        db.update_vulnerability_source(
+            "bundled-demo",
+            source_version="bundled-demo",
+            status="offline-cache-ready",
+            record_count=available,
+            success=True,
+        )
+    return available
 
 
 def correlate_fingerprint(
@@ -141,6 +150,8 @@ def correlate_fingerprint(
             continue
         if range_result == MatchResult.UNKNOWN and not include_unknown:
             continue
+        # NVD-style feeds can contain repeated equivalent ranges. Deduplicate
+        # by the full range key so we keep distinct affected windows.
         key = (
             row["cve_id"],
             row["cpe_uri"],
@@ -163,10 +174,14 @@ def correlate_fingerprint(
             package_revision=fingerprint.package_revision,
         )
         if advisory.get("local_status") == "patched_by_distribution_advisory":
-            status = "not_applicable"
+            # Suppress patched packages here so later stages cannot leak the
+            # candidate into references, events, or findings.
+            continue
         confidence_score = _confidence_score(range_result, fingerprint, candidate)
         if confidence_score < minimum_confidence:
             continue
+        # Confidence reduces the threat score so weak product matches do not
+        # outrank stronger evidence solely because a CVE has a high CVSS score.
         priority_score, priority_explanation = _priority(metric, confidence_score, enrichment)
         explanation = _confidence_explanation(range_result, fingerprint, candidate, version_range)
         evidence = {
@@ -246,8 +261,12 @@ def persist_match(
     )
 
 
-def finding_fingerprint(target: str, port: int, cve_id: str, matched_cpe: str) -> str:
+def finding_fingerprint(target: str, port: int, cve_id: str, matched_cpe: str, *, proto: str = "tcp") -> str:
     raw = f"scanner-vce|{target.lower()}|{port}|{cve_id}|{matched_cpe}"
+    if str(proto or "tcp").lower() != "tcp":
+        # Preserve existing TCP fingerprints while separating findings for a
+        # UDP service that happens to use the same numeric port.
+        raw += f"|{str(proto).lower()}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 

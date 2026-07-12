@@ -1,4 +1,3 @@
-"""Export recon findings to plain text files."""
 from __future__ import annotations
 
 import json

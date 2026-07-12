@@ -1,4 +1,3 @@
-"""In-memory background job registry for UI and orchestration state."""
 from __future__ import annotations
 
 import threading

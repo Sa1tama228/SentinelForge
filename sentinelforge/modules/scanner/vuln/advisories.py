@@ -1,22 +1,3 @@
-"""Distribution and vendor advisory cache helpers.
-
-The importer accepts a compact JSON document so Ubuntu/Debian/RHEL-style
-package advisory data can be loaded without network access:
-
-{
-  "source": "ubuntu-usn",
-  "advisories": [
-    {
-      "cve_id": "CVE-2024-6387",
-      "distribution": "Ubuntu",
-      "package": "openssh",
-      "fixed_version": "1:8.9p1-3ubuntu0.10",
-      "status": "fixed",
-      "reference_url": "https://..."
-    }
-  ]
-}
-"""
 from __future__ import annotations
 
 import json

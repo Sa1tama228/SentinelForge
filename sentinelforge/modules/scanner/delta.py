@@ -1,4 +1,3 @@
-"""Scan delta helpers for asset service changes."""
 from __future__ import annotations
 
 

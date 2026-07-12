@@ -1,28 +1,4 @@
 #!/usr/bin/env python3
-"""
-Convert OSV bulk ZIP files or directories to the custom
-vendor/distribution advisory importer format.
-
-Examples:
-
-  python convert_osv_advisories.py \
-    --input https://storage.googleapis.com/osv-vulnerabilities/Ubuntu/all.zip \
-    --ecosystem-prefix Ubuntu \
-    --output ubuntu-advisories.json
-
-  python convert_osv_advisories.py \
-    --input https://storage.googleapis.com/osv-vulnerabilities/Debian/all.zip \
-    --ecosystem-prefix Debian \
-    --output debian-advisories.json
-
-  python convert_osv_advisories.py \
-    --input ubuntu-all.zip debian-all.zip \
-    --output linux-advisories.json
-
-By default, only entries with a known fixed version are emitted.
-Use --include-unfixed to retain affected entries without a fixed version.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -39,7 +15,8 @@ CVE_RE = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
 
 
 def iter_json_documents(source: str) -> Iterator[dict[str, Any]]:
-    """Yield JSON objects from a URL, ZIP file, JSON file, or directory."""
+    # Accept local files, directories, and OSV ZIP URLs through the same path so
+    # distro advisory refreshes are easy to automate.
     if source.startswith(("https://", "http://")):
         request = urllib.request.Request(
             source,
@@ -69,7 +46,7 @@ def iter_json_documents(source: str) -> Iterator[dict[str, Any]]:
 
 
 def iter_bytes(data: bytes, source_name: str) -> Iterator[dict[str, Any]]:
-    """Parse ZIP or plain JSON bytes."""
+    # OSV bulk downloads are ZIP files; local fixtures are often plain JSON.
     if zipfile.is_zipfile(io.BytesIO(data)):
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             for member in sorted(archive.namelist()):
@@ -95,7 +72,8 @@ def iter_bytes(data: bytes, source_name: str) -> Iterator[dict[str, Any]]:
 
 
 def normalize_json_value(value: Any) -> Iterator[dict[str, Any]]:
-    """Accept one OSV object, an array of OSV objects, or common wrappers."""
+    # Different OSV exports wrap records differently. Flatten only wrapper
+    # shapes this importer knows how to interpret.
     if isinstance(value, dict):
         if isinstance(value.get("vulns"), list):
             for item in value["vulns"]:
@@ -110,7 +88,8 @@ def normalize_json_value(value: Any) -> Iterator[dict[str, Any]]:
 
 
 def collect_cve_ids(record: dict[str, Any], affected: dict[str, Any]) -> list[str]:
-    """Collect CVE IDs from common OSV and distro-specific locations."""
+    # Distro records do not put CVEs in one consistent field, so collect every
+    # known location and validate the final IDs with a strict CVE regex.
     candidates: list[Any] = []
 
     for key in ("id", "aliases", "upstream", "related"):
@@ -242,7 +221,8 @@ def package_targets(
     fixed_versions: list[str],
     expand_binaries: bool,
 ) -> list[tuple[str, list[str]]]:
-    """Return source-package or binary-package targets for matching."""
+    # Advisory ranges usually name source packages, but scanner inventory may
+    # contain binary package names, so optionally expand both into targets.
     if not expand_binaries:
         return [(source_package, fixed_versions)]
 

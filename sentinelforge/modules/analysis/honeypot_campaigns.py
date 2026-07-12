@@ -1,4 +1,3 @@
-"""Cluster honeypot events into compact campaign summaries."""
 from __future__ import annotations
 
 import json
@@ -10,6 +9,8 @@ from ...core import db
 def cluster(limit: int = 1000, *, max_campaigns: int = 20) -> list[dict]:
     groups: dict[str, list] = defaultdict(list)
     for row in db.recent_honeypot_events(limit=limit):
+        # Group first by source IP so campaign summaries describe one actor's
+        # behavior instead of mixing unrelated scans together.
         groups[row["src_ip"]].append(row)
     campaigns = []
     for src_ip, rows in groups.items():
@@ -56,6 +57,8 @@ def _intent(classes: Counter, paths: list[str], iocs: list[dict]) -> str:
 
 def _score(classes: Counter, services: Counter, iocs: list[dict], count: int) -> int:
     score = min(20, count)
+    # Intent-specific activity is weighted higher than raw event volume; a
+    # repeated connection loop should not outrank exploit or credential probes.
     score += classes.get("exploit-probe", 0) * 12
     score += classes.get("credential-attempt", 0) * 10
     score += classes.get("mail-relay-probe", 0) * 8

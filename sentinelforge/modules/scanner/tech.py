@@ -1,4 +1,3 @@
-"""Lightweight technology hints from service evidence."""
 from __future__ import annotations
 
 import re

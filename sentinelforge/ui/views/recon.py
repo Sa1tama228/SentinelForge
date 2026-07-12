@@ -1,4 +1,3 @@
-"""Recon view: passive OSINT launcher + per-collector result cards."""
 from __future__ import annotations
 
 import json

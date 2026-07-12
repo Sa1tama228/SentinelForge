@@ -1,9 +1,3 @@
-"""Honeypot personas and response presets.
-
-Personas keep the low-interaction services coherent: the HTTP banner, page
-body, SSH banner, and FTP replies should look like they came from the same
-kind of host.
-"""
 from __future__ import annotations
 
 from copy import deepcopy
