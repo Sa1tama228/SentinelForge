@@ -1,8 +1,10 @@
 # SentinelForge
 
-SentinelForge is a local defensive security toolkit for small-lab scanning, passive recon, honeypot telemetry, vulnerability cache correlation, and analyst-friendly reporting.
+SentinelForge is a local defensive security evidence-correlation and attack-path analysis toolkit for home labs and small environments.
 
-Use it only on systems you own or are explicitly authorized to assess.
+It normalizes findings from service scanning, vulnerability intelligence, passive reconnaissance, web audits, control gaps, and honeypot telemetry into an evidence graph. SentinelForge uses that graph to rank explainable attack paths, retain supporting and contradictory evidence, and produce analyst-friendly reports.
+
+The project is pre-release. Its current focus is improving correlation logic, evidence confidence, path explainability, and false-positive suppression—not replacing mature scanners such as Nmap.
 
 ![SentinelForge dashboard](dashboard.png)
 
