@@ -20,5 +20,3 @@ data/config.json
 *.session
 *.log
 .git
-.codex
-.agents
