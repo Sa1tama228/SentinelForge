@@ -8,8 +8,8 @@ import flet as ft
 from ...core import db, events
 from ...modules.analysis import source_quality
 from ...modules.recon import exporter
-from ...modules.reports import exporter as report_exporter
 from ...modules.recon.runner import run_async
+from ...modules.reports import exporter as report_exporter
 from .. import theme as ui
 
 _KIND_TITLE = {
@@ -29,7 +29,7 @@ _KIND_TITLE = {
 def _fmt(kind: str, data: dict) -> ft.Control:
     if kind == "dns":
         if not data:
-            return ft.Text("No records.", color=ui.MUTED)
+            return ft.Text("No records", color=ui.MUTED)
         rows = []
         for t, vals in data.items():
             if t == "posture" and isinstance(vals, dict):
@@ -38,7 +38,9 @@ def _fmt(kind: str, data: dict) -> ft.Control:
                     ft.Text(
                         f"  SPF: {'present' if vals.get('spf_present') else 'missing'}\n"
                         f"  DMARC: {'present' if vals.get('dmarc_present') else 'missing'}",
-                        size=12, selectable=True, color=ui.TEXT,
+                        size=12,
+                        selectable=True,
+                        color=ui.TEXT,
                     )
                 )
                 continue
@@ -48,17 +50,15 @@ def _fmt(kind: str, data: dict) -> ft.Control:
 
     if kind == "whois":
         if data.get("error"):
-            return ft.Text(f"RDAP error: {data['error']}",
-                           color=ui.MUTED, size=12)
+            return ft.Text(f"RDAP error: {data['error']}", color=ui.MUTED, size=12)
         rows = []
         for k in ("registrar", "registered", "updated", "expires"):
-            rows.append(ft.Text(f"{k.capitalize()}: {data.get(k) or '-'}",
-                                size=12, selectable=True, color=ui.TEXT))
-        rows.append(ft.Text(f"Status: {', '.join(data.get('status') or []) or '-'}",
-                            size=12, selectable=True, color=ui.TEXT))
+            rows.append(ft.Text(f"{k.capitalize()}: {data.get(k) or '-'}", size=12, selectable=True, color=ui.TEXT))
+        rows.append(
+            ft.Text(f"Status: {', '.join(data.get('status') or []) or '-'}", size=12, selectable=True, color=ui.TEXT)
+        )
         ns = data.get("nameservers") or []
-        rows.append(ft.Text(f"Nameservers: {', '.join(ns) or '-'}",
-                            size=12, selectable=True, color=ui.TEXT))
+        rows.append(ft.Text(f"Nameservers: {', '.join(ns) or '-'}", size=12, selectable=True, color=ui.TEXT))
         return ft.Column(rows, spacing=2)
 
     if kind == "subdomains":
@@ -66,11 +66,11 @@ def _fmt(kind: str, data: dict) -> ft.Control:
         sources = data.get("sources", {})
         return ft.Column(
             [
-                ft.Text(f"Found {data.get('count', 0)} unique names",
-                        size=12, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                ft.Text(f"Sources: {sources}", size=11, selectable=True, color=ui.MUTED),
-                ft.Text("\n".join(names[:200]) or "-",
-                        size=11, selectable=True, color=ui.TEXT),
+                ft.Text(
+                    f"Found {data.get('count', 0)} unique names", size=12, weight=ft.FontWeight.BOLD, color=ui.TEXT
+                ),
+                ft.Text(f"Sources: {sources}", size=12, selectable=True, color=ui.MUTED),
+                ft.Text("\n".join(names[:200]) or "-", size=12, selectable=True, color=ui.TEXT),
             ],
             spacing=2,
         )
@@ -78,9 +78,16 @@ def _fmt(kind: str, data: dict) -> ft.Control:
     if kind in {"subdomain_diff", "tech_diff"}:
         return ft.Column(
             [
-                ft.Text(f"Added: {', '.join(data.get('added', [])[:50]) or '-'}", size=11, selectable=True, color=ui.TEXT),
-                ft.Text(f"Removed: {', '.join(data.get('removed', [])[:50]) or '-'}", size=11, selectable=True, color=ui.MUTED),
-                ft.Text(f"Unchanged: {data.get('unchanged', 0)}", size=11, color=ui.MUTED),
+                ft.Text(
+                    f"Added: {', '.join(data.get('added', [])[:50]) or '-'}", size=12, selectable=True, color=ui.TEXT
+                ),
+                ft.Text(
+                    f"Removed: {', '.join(data.get('removed', [])[:50]) or '-'}",
+                    size=12,
+                    selectable=True,
+                    color=ui.MUTED,
+                ),
+                ft.Text(f"Unchanged: {data.get('unchanged', 0)}", size=12, color=ui.MUTED),
             ],
             spacing=3,
         )
@@ -89,8 +96,14 @@ def _fmt(kind: str, data: dict) -> ft.Control:
         rows = []
         for rtype, delta in data.items():
             rows.append(ft.Text(rtype, size=12, weight=ft.FontWeight.BOLD, color=ui.TEXT))
-            rows.append(ft.Text(f"  Added: {', '.join(delta.get('added', [])) or '-'}", size=11, selectable=True, color=ui.TEXT))
-            rows.append(ft.Text(f"  Removed: {', '.join(delta.get('removed', [])) or '-'}", size=11, selectable=True, color=ui.MUTED))
+            rows.append(
+                ft.Text(f"  Added: {', '.join(delta.get('added', [])) or '-'}", size=12, selectable=True, color=ui.TEXT)
+            )
+            rows.append(
+                ft.Text(
+                    f"  Removed: {', '.join(delta.get('removed', [])) or '-'}", size=12, selectable=True, color=ui.MUTED
+                )
+            )
         return ft.Column(rows or [ft.Text("No DNS changes", color=ui.MUTED)], spacing=2)
 
     if kind == "exposure":
@@ -98,12 +111,12 @@ def _fmt(kind: str, data: dict) -> ft.Control:
         if data.get("disabled"):
             return ft.Text("Safe endpoint checks disabled", size=12, color=ui.MUTED)
         if not checks:
-            return ft.Text("No notable exposed endpoints detected.", size=12, color=ui.MUTED)
+            return ft.Text("No notable exposed endpoints detected", size=12, color=ui.MUTED)
         return ft.Column(
             [
                 ft.Text(
                     f"{item.get('severity')}  {item.get('path')}  HTTP {item.get('status')}  {item.get('title')}",
-                    size=11,
+                    size=12,
                     selectable=True,
                     color=ui.TEXT,
                 )
@@ -115,12 +128,12 @@ def _fmt(kind: str, data: dict) -> ft.Control:
     if kind == "takeover":
         hints = data.get("hints", [])
         if not hints:
-            return ft.Text("No takeover heuristics matched.", size=12, color=ui.MUTED)
+            return ft.Text("No takeover heuristics matched", size=12, color=ui.MUTED)
         return ft.Column(
             [
                 ft.Text(
                     f"{item.get('provider')}  {item.get('cname')}  confidence={item.get('confidence')}",
-                    size=11,
+                    size=12,
                     selectable=True,
                     color=ui.WARN,
                 )
@@ -134,8 +147,7 @@ def _fmt(kind: str, data: dict) -> ft.Control:
 
     # techstack
     if data.get("error"):
-        return ft.Text(f"HTTP error: {data['error']}",
-                       color=ui.MUTED, size=12)
+        return ft.Text(f"HTTP error: {data['error']}", color=ui.MUTED, size=12)
     return ft.Column(
         [
             ft.Text(f"Final URL: {data.get('final_url', '-')}", size=12, selectable=True, color=ui.TEXT),
@@ -145,11 +157,16 @@ def _fmt(kind: str, data: dict) -> ft.Control:
             ft.Text(f"X-Powered-By: {data.get('powered_by') or '-'}", size=12, selectable=True, color=ui.TEXT),
             ft.Text(f"Generator: {data.get('generator') or '-'}", size=12, selectable=True, color=ui.TEXT),
             ft.Text(f"Cookies: {', '.join(data.get('cookies') or []) or '-'}", size=12, selectable=True, color=ui.TEXT),
-            ft.Text(f"Technologies: {', '.join(data.get('technologies') or []) or '-'}",
-                    size=12, weight=ft.FontWeight.BOLD, color=ui.ACCENT,
-                    selectable=True),
-            ft.Text(f"Security headers: {data.get('security_headers') or {}}",
-                    size=11, selectable=True, color=ui.MUTED),
+            ft.Text(
+                f"Technologies: {', '.join(data.get('technologies') or []) or '-'}",
+                size=12,
+                weight=ft.FontWeight.BOLD,
+                color=ui.ACCENT,
+                selectable=True,
+            ),
+            ft.Text(
+                f"Security headers: {data.get('security_headers') or {}}", size=12, selectable=True, color=ui.MUTED
+            ),
         ],
         spacing=2,
     )
@@ -165,8 +182,7 @@ def _card_for(kind: str, data_json: str) -> ft.Control:
         content=ft.Container(
             content=ft.Column(
                 [
-                    ft.Text(_KIND_TITLE.get(kind, kind),
-                            size=14, weight=ft.FontWeight.BOLD, color=ui.TEXT),
+                    ft.Text(_KIND_TITLE.get(kind, kind), size=14, weight=ft.FontWeight.BOLD, color=ui.TEXT),
                     _fmt(kind, data),
                 ],
                 spacing=4,
@@ -177,8 +193,7 @@ def _card_for(kind: str, data_json: str) -> ft.Control:
 
 def render(page: ft.Page) -> ft.Control:
     domain_in = ft.TextField(
-        label="Domain (e.g. example.com)", value="example.com",
-        width=360, dense=True, **ui.input_kwargs()
+        label="Domain (e.g. example.com)", value="example.com", width=360, dense=True, **ui.input_kwargs()
     )
     status = ft.Text(size=12, color=ui.MUTED)
     history = ft.Dropdown(
@@ -221,13 +236,11 @@ def render(page: ft.Page) -> ft.Control:
     def _render_results(target_id: int | None) -> None:
         results.controls.clear()
         if target_id is None:
-            results.controls.append(
-                ft.Text("No target selected", color=ui.MUTED))
+            results.controls.append(ft.Text("No target selected", color=ui.MUTED))
             return
         findings = db.recon_findings_for(target_id)
         if not findings:
-            results.controls.append(
-                ft.Text("No findings yet - run a recon.", color=ui.MUTED))
+            results.controls.append(ft.Text("Run recon to collect findings", color=ui.MUTED))
             return
         for f in findings:
             results.controls.append(_card_for(f["kind"], f["data_json"]))
@@ -272,18 +285,18 @@ def render(page: ft.Page) -> ft.Control:
         active_mount.controls = [ui.task_panel("Active recon", state["tasks"], _select_task)]
         try:
             page.update()
-        except Exception:
+        except RuntimeError:
+            # Worker events can arrive after the page closes
             pass
 
     def _render_source_status(target_id: int | None) -> None:
         source_status.controls.clear()
-        source_status.controls.append(ft.Text("Source status", size=14, weight=ft.FontWeight.BOLD, color=ui.TEXT))
         if target_id is None:
-            source_status.controls.append(ft.Text("No target selected", size=11, color=ui.MUTED))
+            source_status.controls.append(ft.Text("No target selected", size=12, color=ui.MUTED))
             return
         rows = source_quality.recon_source_scores(target_id)
         if not rows:
-            source_status.controls.append(ft.Text("No source status yet", size=11, color=ui.MUTED))
+            source_status.controls.append(ft.Text("No source status yet", size=12, color=ui.MUTED))
             return
         for row in rows:
             color = ui.DANGER if row["status"] == "failed" else ui.ACCENT
@@ -292,7 +305,7 @@ def render(page: ft.Page) -> ft.Control:
                     f"{row['source_name']}: quality={float(row.get('quality_score', 0)):.2f} "
                     f"status={row['status']} records={row['record_count']} "
                     f"reasons={','.join(row.get('quality_reasons') or [])} error={row['last_error'] or '-'}",
-                    size=10,
+                    size=12,
                     color=color if row["status"] == "failed" else ui.MUTED,
                     selectable=True,
                 )
@@ -354,6 +367,7 @@ def render(page: ft.Page) -> ft.Control:
         ui.notify(page, f"Exported: {path}")
 
     export_btn = ui.action_button("Export TXT", "TXT", _export, width=128)
+
     def _export_report(fmt: str):
         def _inner(_):
             try:
@@ -362,53 +376,61 @@ def render(page: ft.Page) -> ft.Control:
                 ui.notify(page, f"Export failed: {exc}")
                 return
             ui.notify(page, f"Exported: {path}")
+
         return _inner
 
-    report_exports = ft.Row(
-        [
-            ui.action_button("JSON", "JS", _export_report("json"), width=82),
-            ui.action_button("CSV", "CSV", _export_report("csv"), width=78),
-            ui.action_button("HTML", "HT", _export_report("html"), width=86),
-            ui.action_button("SARIF", "SA", _export_report("sarif"), width=88),
-            ui.action_button("STIX", "ST", _export_report("stix"), width=82),
-            ui.action_button("MD", "MD", _export_report("md"), width=72),
-        ],
-        spacing=8,
-        wrap=True,
-    )
+    report_exports = ui.export_menu(_export_report, ("json", "csv", "html", "sarif", "stix", "md"))
     history.on_select = _on_history_select
 
     unsub = events.subscribe("recon", _refresh)
     page._sf_cleanups = getattr(page, "_sf_cleanups", [])
     page._sf_cleanups.append(unsub)
 
-    active_mount.controls = [ui.task_panel("Active recon", state["tasks"], _select_task)]
     _refresh()
-    return ft.Column(
+    domain_in.width = None
+    history.expand = False
+    configuration = ft.Column(
         [
-            ft.Row(
-                [
-                    ft.Text("Passive recon (OSINT)", size=18, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                    active_mount,
-                ],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                vertical_alignment=ft.CrossAxisAlignment.START,
-            ),
+            ft.Text("Reconnaissance", size=18, weight=ft.FontWeight.W_600, color=ui.TEXT),
             ft.Text(
-                "Passive only: DNS, RDAP, certificate-transparency subdomains and a "
-                "single HTTP GET for tech detection. No active exploitation.",
-                size=11, color=ui.MUTED,
+                "DNS, RDAP, certificate transparency and HTTP technology detection", size=14, color=ui.TEXT_SECONDARY
             ),
-            ft.Row([domain_in, run_btn, export_btn], spacing=10),
-            report_exports,
-            ui.panel(source_status, padding=12),
+            domain_in,
+            run_btn,
             history,
-            status,
-            selected_progress,
-            ft.Divider(color=ui.BORDER),
-            ft.Text("Findings", size=15, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-            results,
+            ft.Row([export_btn, report_exports], spacing=8, wrap=True),
+            ui.section("Source status", source_status),
         ],
+        spacing=20,
         expand=True,
         scroll=ft.ScrollMode.AUTO,
+        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+    )
+    return ft.Row(
+        [
+            ft.Container(
+                width=312,
+                content=configuration,
+                padding=ft.Padding(left=0, top=0, right=24, bottom=0),
+                border=ft.Border(right=ft.BorderSide(1, ui.BORDER)),
+            ),
+            ft.Container(
+                expand=True,
+                padding=24,
+                content=ft.Column(
+                    [
+                        ft.Text("Recon findings", size=22, weight=ft.FontWeight.W_600, color=ui.TEXT),
+                        status,
+                        selected_progress,
+                        active_mount,
+                        ft.Divider(color=ui.BORDER),
+                        results,
+                    ],
+                    spacing=16,
+                    expand=True,
+                ),
+            ),
+        ],
+        spacing=0,
+        expand=True,
     )

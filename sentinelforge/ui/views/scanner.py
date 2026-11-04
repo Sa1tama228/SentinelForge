@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import threading
 import time
+from datetime import UTC, datetime
 
 import flet as ft
 
-from ...core import config, db, events
+from ...core import config, db, events, jobs
 from ...modules.scanner import scheduler
 from ...modules.scanner.profiles import PROFILES, profile_options, resolve_profile
 from ...modules.scanner.runner import cancel_scan, run_async
@@ -18,11 +19,8 @@ def _results_table(rows: list) -> ft.Control:
     table = ft.DataTable(
         columns=[ft.DataColumn(ft.Text(c, color=ui.TEXT, weight=ft.FontWeight.BOLD)) for c in _TABLE_COLUMNS],
         rows=[],
-        bgcolor=ui.PANEL,
-        border=ui.border(),
-        border_radius=8,
-        heading_row_color=ui.PANEL_2,
-        data_row_color=ui.PANEL,
+        heading_row_color=ui.BACKGROUND,
+        data_row_color=ui.BACKGROUND,
         horizontal_margin=8,
         column_spacing=14,
         heading_row_height=34,
@@ -39,7 +37,7 @@ def _results_table(rows: list) -> ft.Control:
                     ft.DataCell(ft.Text(row["service"] or "?", selectable=True, color=ui.TEXT)),
                     ft.DataCell(ft.Text(row["version"] or "-", selectable=True, color=ui.TEXT)),
                     ft.DataCell(ft.Text(cve, size=12, color=ui.DANGER if cve else ui.TEXT, selectable=True)),
-                    ft.DataCell(ft.Text((row["banner"] or "")[:90], size=11, selectable=True, color=ui.TEXT)),
+                    ft.DataCell(ft.Text((row["banner"] or "")[:90], size=12, selectable=True, color=ui.TEXT)),
                 ]
             )
         )
@@ -103,13 +101,15 @@ def render(page: ft.Page) -> ft.Control:
     history = ft.Dropdown(label="Run history", expand=True, dense=True, menu_height=320, **ui.dropdown_kwargs())
     table_wrap = ft.Column([ft.Text("No results yet", color=ui.MUTED)], scroll=ft.ScrollMode.AUTO, expand=True)
     active_mount = ft.Column(spacing=8)
+    compact_active_mount = ft.Column(spacing=8, visible=False)
     schedule_mount = ft.Column(spacing=8)
+    live_output = ft.ListView(height=200, spacing=8, auto_scroll=True)
 
-    page._sf_scan_tasks = getattr(page, "_sf_scan_tasks", {})
+    view_lock = threading.RLock()
     state = {
         "run_id": None,
         "profile": profile_select.value or "custom",
-        "tasks": page._sf_scan_tasks,
+        "disposed": False,
     }
 
     def _scan_kwargs() -> tuple[str, str, bool, str]:
@@ -122,17 +122,9 @@ def render(page: ft.Page) -> ft.Control:
     def _start_scan(*, target: str, ports: str, check_vulns: bool, profile_key: str) -> int:
         run_id = run_async(target, ports, check_vulns=check_vulns, profile_key=profile_key)
         state["run_id"] = run_id
-        state["tasks"][f"scan:{run_id}"] = {
-            "id": run_id,
-            "label": f"Scan #{run_id}  {target}",
-            "phase": "queued",
-            "progress": 0.0,
-            "status": "running",
-            "created": time.time(),
-        }
         return run_id
 
-    def _load_history() -> None:
+    def _load_history(payload: dict) -> None:
         rows = db.recent_scan_runs(limit=30)
         history.options = [
             ft.dropdown.Option(
@@ -142,6 +134,14 @@ def render(page: ft.Page) -> ft.Control:
             for row in rows
         ] or [ft.dropdown.Option(key="", text="No saved scan runs")]
         history.value = str(state["run_id"]) if state["run_id"] else ""
+        selected = next((row for row in rows if row["id"] == state["run_id"]), None)
+        if selected:
+            selected_progress.value = selected["progress"]
+            phase = "invalid" if selected["status"] == "invalid-ports" else selected["status"]
+            current = {"phase": phase, "reason": selected["error"]}
+            if payload.get("run_id") == selected["id"] and payload.get("phase") == phase:
+                current.update(payload)
+            status.value = _status_text(current)
 
     def _render_results() -> None:
         table_wrap.controls.clear()
@@ -150,29 +150,31 @@ def render(page: ft.Page) -> ft.Control:
             table_wrap.controls.append(ft.Text("No run selected", color=ui.MUTED))
             return
         rows = db.scan_results_for_run(int(run_id))
-        table_wrap.controls.append(_results_table(rows) if rows else ft.Text(f"Run #{run_id}: no open services", color=ui.MUTED))
+        table_wrap.controls.append(
+            _results_table(rows) if rows else ft.Text(f"Run #{run_id}: no open services", color=ui.MUTED)
+        )
 
-    def _render_active() -> None:
-        active_mount.controls = [
+    def _active_controls(active: list[dict]) -> list[ft.Control]:
+        controls = [
             ft.Text("Active Runs", size=14, weight=ft.FontWeight.BOLD, color=ui.TEXT),
         ]
-        active = [task for task in state["tasks"].values() if task.get("status") == "running"]
         if not active:
-            active_mount.controls.append(ft.Text("No active scans", size=11, color=ui.MUTED))
-            return
-        for task in sorted(active, key=lambda item: item.get("created", 0), reverse=True)[:8]:
+            controls.append(ft.Text("No active scans", size=12, color=ui.MUTED))
+            return controls
+        for task in active[:8]:
             cancel_btn = ui.action_button("Cancel", "X", _cancel_active, width=70, accent=ui.DANGER)
-            cancel_btn.data = task["id"]
-            active_mount.controls.append(
+            cancel_btn.data = int(task["id"].split(":", 1)[1])
+            cancel_btn.disabled = task["status"] == "cancelling"
+            controls.append(
                 ui.panel(
                     padding=8,
                     content=ft.Row(
                         [
                             ft.Column(
                                 [
-                                    ft.Text(task.get("label", "scan"), size=11, color=ui.TEXT, no_wrap=True),
+                                    ft.Text(task.get("label", "scan"), size=12, color=ui.TEXT, no_wrap=True),
                                     ui.progress_bar(float(task.get("progress", 0)), width=190),
-                                    ft.Text(task.get("phase", "running"), size=10, color=ui.MUTED),
+                                    ft.Text(task["status"], size=12, color=ui.MUTED),
                                 ],
                                 spacing=4,
                                 expand=True,
@@ -183,16 +185,28 @@ def render(page: ft.Page) -> ft.Control:
                     ),
                 )
             )
+        return controls
+
+    def _render_active() -> None:
+        active = jobs.list_jobs("scan", include_finished=False)
+        # Each layout slot owns its controls so resize never reparents a live control
+        active_mount.controls = _active_controls(active)
+        compact_active_mount.controls = _active_controls(active)
 
     def _render_schedules() -> None:
         schedule_mount.controls = [ft.Text("Schedules", size=14, weight=ft.FontWeight.BOLD, color=ui.TEXT)]
         schedules = db.scan_schedules()
         if not schedules:
-            schedule_mount.controls.append(ft.Text("No schedules", size=11, color=ui.MUTED))
+            schedule_mount.controls.append(ft.Text("No schedules", size=12, color=ui.MUTED))
             return
         for row in schedules:
-            run_btn = ui.action_button("Run now", "RUN", _run_schedule_now, width=72)
-            toggle_btn = ui.action_button("Disable" if row["enabled"] else "Enable", "ON" if not row["enabled"] else "OFF", _toggle_schedule, width=72)
+            run_btn = ui.action_button("Run now", "RUN", _run_schedule_now, width=96)
+            toggle_btn = ui.action_button(
+                "Disable" if row["enabled"] else "Enable",
+                "ON" if not row["enabled"] else "OFF",
+                _toggle_schedule,
+                width=72,
+            )
             delete_btn = ui.action_button("Delete", "DEL", _delete_schedule, width=72, accent=ui.DANGER)
             for button in (run_btn, toggle_btn, delete_btn):
                 button.data = int(row["id"])
@@ -203,10 +217,15 @@ def render(page: ft.Page) -> ft.Control:
                         [
                             ft.Column(
                                 [
-                                    ft.Text(f"#{row['id']} {row['target']}  {row['profile_key']}  {'CVE' if row['check_vulns'] else 'Ports'}", size=12, color=ui.TEXT, selectable=True),
+                                    ft.Text(
+                                        f"#{row['id']} {row['target']}  {row['profile_key']}  {'CVE' if row['check_vulns'] else 'Ports'}",
+                                        size=12,
+                                        color=ui.TEXT,
+                                        selectable=True,
+                                    ),
                                     ft.Text(
                                         f"Ports: {row['ports']} | every {row['interval_hours']}h | next: {row['next_run_ts'] or 'now'} | enabled: {bool(row['enabled'])}",
-                                        size=10,
+                                        size=12,
                                         color=ui.MUTED,
                                         selectable=True,
                                     ),
@@ -221,36 +240,34 @@ def render(page: ft.Page) -> ft.Control:
             )
 
     def _refresh(payload: dict | None = None) -> None:
-        payload = payload or {}
-        run_id = payload.get("run_id")
-        phase = payload.get("phase")
-        if run_id is not None:
-            task = state["tasks"].setdefault(
-                f"scan:{run_id}",
-                {"id": run_id, "label": f"Scan #{run_id}", "phase": "queued", "progress": 0.0, "status": "running", "created": time.time()},
-            )
-            if payload.get("target"):
-                task["label"] = f"Scan #{run_id}  {payload['target']}"
-            task["phase"] = phase or task.get("phase", "running")
-            task["progress"] = float(payload.get("progress", task.get("progress", 0)))
-            if phase in {"done", "failed", "invalid", "cancelled"}:
-                task["status"] = "done"
-                task["progress"] = 1.0
-        if run_id == state["run_id"]:
-            selected_progress.value = float(payload.get("progress", selected_progress.value or 0))
-            status.value = _status_text(payload)
-        _load_history()
-        _render_results()
-        _render_active()
-        _render_schedules()
-        try:
+        with view_lock:
+            if state["disposed"]:
+                return
+            payload = payload or {}
+            run_id = payload.get("run_id")
+            phase = payload.get("phase")
+            if phase:
+                live_output.controls.append(
+                    ft.Text(
+                        f"[{time.strftime('%H:%M:%S')}]  Run #{run_id or '?'} · {_status_text(payload)}",
+                        size=12,
+                        font_family="Consolas",
+                        color=ui.TEXT_SECONDARY,
+                        selectable=True,
+                    )
+                )
+                live_output.controls = live_output.controls[-200:]
+            _load_history(payload)
+            _render_results()
+            _render_active()
+            _render_schedules()
             page.update()
-        except Exception:
-            pass
 
     def _status_text(payload: dict) -> str:
         phase = payload.get("phase")
         if phase == "done":
+            if "open" not in payload:
+                return "Scan complete"
             delta = payload.get("delta") or {}
             return (
                 f"Scan complete: {payload.get('open', 0)} open service(s); "
@@ -258,8 +275,8 @@ def render(page: ft.Page) -> ft.Control:
             )
         if phase == "cancelled":
             return "Scan cancelled"
-        if phase == "failed":
-            return f"Scan failed: {payload.get('reason', 'unknown')}"
+        if phase in {"failed", "invalid", "blocked"}:
+            return f"Scan {phase}: {payload.get('reason', 'unknown')}"
         if phase == "probe":
             probe = payload.get("probe") or {}
             return f"Host probe via {probe.get('engine', 'unknown')}: {probe.get('ok')}"
@@ -272,9 +289,8 @@ def render(page: ft.Page) -> ft.Control:
         if not target:
             ui.notify(page, "Enter a target")
             return
-        run_id = _start_scan(target=target, ports=ports, check_vulns=check_vulns, profile_key=profile_key)
-        status.value = f"Queued scan #{run_id}"
-        _refresh({"run_id": run_id, "phase": "queued", "progress": 0.0})
+        _start_scan(target=target, ports=ports, check_vulns=check_vulns, profile_key=profile_key)
+        _refresh()
 
     def _schedule_scan(_):
         target, ports, check_vulns, profile_key = _scan_kwargs()
@@ -304,7 +320,7 @@ def render(page: ft.Page) -> ft.Control:
             return db.now()
         for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
             try:
-                parsed = datetime.strptime(value, fmt).replace(tzinfo=timezone.utc)
+                parsed = datetime.strptime(value, fmt).replace(tzinfo=UTC)
                 return parsed.strftime("%Y-%m-%d %H:%M:%S")
             except ValueError:
                 pass
@@ -323,7 +339,7 @@ def render(page: ft.Page) -> ft.Control:
         )
         db.update_scan_schedule(schedule_id, last_run_ts=db.now())
         ui.notify(page, f"Started scan #{run_id}")
-        _refresh({"run_id": run_id, "phase": "queued", "progress": 0})
+        _refresh()
 
     def _toggle_schedule(e) -> None:
         schedule_id = int(e.control.data)
@@ -340,7 +356,6 @@ def render(page: ft.Page) -> ft.Control:
     def _cancel_active(e) -> None:
         run_id = int(e.control.data)
         if cancel_scan(run_id):
-            state["tasks"].setdefault(f"scan:{run_id}", {"id": run_id})["phase"] = "cancelling"
             ui.notify(page, f"Cancel requested for scan #{run_id}")
         else:
             ui.notify(page, "Scan is no longer cancellable")
@@ -349,8 +364,7 @@ def render(page: ft.Page) -> ft.Control:
     def _clear_history(_):
         db.clear_scan_history()
         state["run_id"] = None
-        state["tasks"].clear()
-        ui.notify(page, "Scan history cleared")
+        ui.notify(page, "Finished scan history cleared; active runs are preserved")
         _refresh()
 
     def _profile_changed(e) -> None:
@@ -368,99 +382,133 @@ def render(page: ft.Page) -> ft.Control:
     profile_select.on_select = _profile_changed
     history.on_select = _history_selected
 
-    unsub_scan = events.subscribe("scanner", _refresh)
-    unsub_sched = events.subscribe("scheduler", lambda _payload: _refresh())
+    async def _refresh_from_event(payload: dict) -> None:
+        _refresh(payload)
+
+    def _queue_refresh(payload: dict) -> None:
+        with view_lock:
+            if not state["disposed"]:
+                page.run_task(_refresh_from_event, payload)
+
+    def _dispose() -> None:
+        with view_lock:
+            state["disposed"] = True
+            unsub_scan()
+            unsub_sched()
+            unsub_jobs()
+
+    unsub_scan = events.subscribe("scanner", _queue_refresh)
+    unsub_sched = events.subscribe("scheduler", lambda _payload: _queue_refresh({}))
+    unsub_jobs = events.subscribe(
+        "jobs",
+        lambda payload: (
+            _queue_refresh({}) if payload["job"]["kind"] == "scan" and payload["phase"] != "updated" else None
+        ),
+    )
     page._sf_cleanups = getattr(page, "_sf_cleanups", [])
-    page._sf_cleanups.extend([unsub_scan, unsub_sched])
+    page._sf_cleanups.append(_dispose)
 
     _refresh()
-    scan_setup_panel = ui.panel(
-        padding=14,
-        expand=True,
-        height=260,
+    for field in (target_in, ports_in, profile_select, scan_type, start_time, interval_hours):
+        field.width = 280
+    selected_progress.width = None
+    selected_progress.expand = True
+    history.expand = False
+    history.width = None
+    configuration = ft.Container(
+        width=312,
+        padding=ft.Padding(left=0, top=0, right=24, bottom=0),
+        border=ft.Border(right=ft.BorderSide(1, ui.BORDER)),
         content=ft.Column(
             [
-                ft.Text("Scan Setup", size=14, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                ft.Row([target_in, profile_select, scan_type], spacing=10, wrap=True),
+                ft.Text("Scan configuration", size=18, weight=ft.FontWeight.W_600, color=ui.TEXT),
+                ft.Text("Authorized targets only", size=12, color=ui.WARN),
+                target_in,
+                profile_select,
+                scan_type,
                 ports_in,
-                ft.Row(
-                    [
-                        ui.action_button("Run scan", "RUN", _scan_now, width=108),
-                        ui.action_button("Clear history", "CLR", _clear_history, width=124, accent=ui.WARN),
-                    ],
-                    spacing=10,
-                ),
-                selected_progress,
-                status,
-            ],
-            spacing=10,
-        ),
-    )
-    scheduling_panel = ui.panel(
-        padding=14,
-        expand=True,
-        height=260,
-        content=ft.Column(
-            [
-                ft.Text("Scheduling", size=14, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                ft.Row(
-                    [start_time, interval_hours, ui.action_button("Save schedule", "SAVE", _schedule_scan, width=128)],
-                    spacing=10,
-                    wrap=True,
-                ),
-                ft.Container(
-                    height=155,
-                    content=ft.Column([schedule_mount], scroll=ft.ScrollMode.AUTO, expand=True),
+                ft.Text("Scope restrictions from Settings apply to every scan", size=12, color=ui.TEXT_MUTED),
+                ui.action_button("Start scan", ft.Icons.PLAY_ARROW_OUTLINED, _scan_now, width=280),
+                ui.section(
+                    "Scheduling",
+                    ft.Column(
+                        [
+                            start_time,
+                            interval_hours,
+                            ui.action_button("Save schedule", "SAVE", _schedule_scan, width=152),
+                            schedule_mount,
+                        ],
+                        spacing=16,
+                    ),
                 ),
             ],
-            spacing=10,
-        ),
-    )
-    active_panel = ui.panel(active_mount, padding=14, expand=True, height=260)
-    history_panel = ui.panel(
-        ft.Column(
-            [
-                ft.Text("History", size=14, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                history,
-            ],
-            spacing=8,
+            spacing=20,
+            scroll=ft.ScrollMode.AUTO,
             expand=True,
         ),
-        padding=14,
-        expand=True,
-        height=260,
     )
-    return ft.Column(
+    results_area = ft.Column(
         [
             ft.Row(
                 [
-                    ft.Text("Scanner", size=18, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                    ft.Text("Authorized targets only", size=12, color=ui.WARN),
+                    ft.Text("Scan progress", size=18, weight=ft.FontWeight.W_600, color=ui.TEXT),
+                    ft.Text("Live events", size=12, color=ui.TEXT_MUTED),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
-            ft.Row([scan_setup_panel, scheduling_panel], spacing=12),
-            ft.Row(
-                [
-                    active_panel,
-                    history_panel,
-                ],
-                spacing=12,
-            ),
-            ui.panel(
-                padding=12,
-                expand=True,
-                content=ft.Column(
+            ft.Row([selected_progress], expand=False),
+            status,
+            compact_active_mount,
+            ui.section(
+                "Live output",
+                ft.Column(
                     [
-                        ft.Text("Results", size=14, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                        table_wrap,
+                        ft.Text("Events from this view appear here when a scan runs", size=12, color=ui.TEXT_MUTED),
+                        live_output,
                     ],
-                    spacing=8,
-                    expand=True,
+                    spacing=12,
                 ),
             ),
+            ui.section(
+                "Run history",
+                ft.Column(
+                    [
+                        history,
+                        ui.action_button("Clear history", "CLR", _clear_history, width=148, accent=ui.WARN),
+                    ],
+                    spacing=12,
+                ),
+            ),
+            ui.section("Discovered services", ft.Container(height=260, content=table_wrap)),
         ],
+        spacing=16,
         expand=True,
-        spacing=12,
         scroll=ft.ScrollMode.AUTO,
+    )
+    active_area = ft.Container(
+        width=240,
+        padding=ft.Padding(left=24, top=0, right=0, bottom=0),
+        border=ft.Border(left=ft.BorderSide(1, ui.BORDER)),
+        content=ft.Column([active_mount], scroll=ft.ScrollMode.AUTO, expand=True),
+    )
+
+    def adapt(event):
+        with view_lock:
+            if state["disposed"]:
+                return
+            visible = event.width >= 1240
+            if active_area.visible != visible:
+                active_area.visible = visible
+                compact_active_mount.visible = not visible
+                page.update()
+
+    return ft.Row(
+        [
+            configuration,
+            ft.Container(content=results_area, expand=True, padding=ft.Padding(left=24, top=0, right=24, bottom=0)),
+            active_area,
+        ],
+        spacing=0,
+        expand=True,
+        on_size_change=adapt,
     )

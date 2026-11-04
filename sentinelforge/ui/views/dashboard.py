@@ -13,22 +13,7 @@ from ..dashboard_service import DashboardActivityItem, DashboardService, Dashboa
 
 logger = logging.getLogger(__name__)
 
-_ACTIVITY_LIMIT = 7
-_WIDE_CONTENT_MIN_WIDTH = 1200
-_WIDE_SUMMARY_HEIGHT = 656
-
-
-def _header_control(label: str, tooltip: str) -> ft.Control:
-    return ft.Container(
-        height=38,
-        padding=ft.Padding(left=15, top=0, right=15, bottom=0),
-        border_radius=ui.RADIUS_CONTROL,
-        bgcolor=ui.SURFACE_SECONDARY,
-        border=ui.border(ui.BORDER_STRONG),
-        alignment=ft.Alignment(0, 0),
-        tooltip=tooltip,
-        content=ft.Text(label, size=11, weight=ft.FontWeight.W_600, color=ui.TEXT_SECONDARY),
-    )
+_ACTIVITY_LIMIT = 5
 
 
 def render(page: ft.Page, service: DashboardService | None = None) -> ft.Control:
@@ -64,7 +49,7 @@ def render(page: ft.Page, service: DashboardService | None = None) -> ft.Control
             except ValueError:
                 return None
 
-        # Selection context is optional and must never block destination navigation.
+        # Missing record IDs must not block navigation
         if item.item_type == "finding":
             page._sf_selected_finding_id = _selected_id()
             _navigate("findings")
@@ -102,20 +87,12 @@ def render(page: ft.Page, service: DashboardService | None = None) -> ft.Control
         on_severity_change=_severity_changed,
         on_search_change=_search_changed,
         on_select=_select_activity,
+        on_new_scan=lambda _e: _navigate("scanner"),
     )
     operational = OperationalSummaryPanel(
         on_open_scanner=lambda _event: _navigate("scanner"),
         on_open_attack_paths=lambda _event: _navigate("attack_paths"),
     )
-    operational.height = _WIDE_SUMMARY_HEIGHT
-
-    def _layout_changed(event: ft.LayoutSizeChangeEvent) -> None:
-        # Native Flet collapses an unconstrained stretched summary column.
-        target_height = _WIDE_SUMMARY_HEIGHT if event.width >= _WIDE_CONTENT_MIN_WIDTH else None
-        if operational.height == target_height:
-            return
-        operational.height = target_height
-        _update_controls(operational)
 
     def _mounted() -> bool:
         return not bool(state["disposed"]) and getattr(page, "_sf_current_view", "dashboard") == "dashboard"
@@ -171,7 +148,7 @@ def render(page: ft.Page, service: DashboardService | None = None) -> ft.Control
                 except Exception:
                     logger.exception("Dashboard activity refresh failed")
                     activity_table.set_error(
-                        "Recent activity is temporarily unavailable. Other Dashboard data remains usable."
+                        "Recent activity is unavailable; other Overview data remains usable"
                     )
                 _update_controls(activity_table)
         finally:
@@ -189,7 +166,7 @@ def render(page: ft.Page, service: DashboardService | None = None) -> ft.Control
             return
         with state_lock:
             if bool(state["refreshing"]):
-                # Coalesce event bursts into one follow-up storage refresh.
+                # Coalesce event bursts into one follow-up storage refresh
                 state["pending_summary"] = bool(state["pending_summary"]) or summary
                 state["pending_activity"] = bool(state["pending_activity"]) or activity
                 return
@@ -234,52 +211,61 @@ def render(page: ft.Page, service: DashboardService | None = None) -> ft.Control
     header = ft.ResponsiveRow(
         [
             ft.Container(
-                col={"xs": 12, "md": 8},
-                content=ft.Column(
-                    [
-                        ft.Text("Analyst Dashboard", size=22, weight=ft.FontWeight.W_600, color=ui.TEXT_PRIMARY),
-                        ft.Text(
-                            "One workspace for signals, findings and operational context.",
-                            size=11,
-                            color=ui.TEXT_SECONDARY,
-                        ),
-                    ],
-                    spacing=4,
-                ),
-            ),
-            ft.Container(
-                col={"xs": 12, "md": 4},
-                alignment=ft.Alignment(1, 0),
+                col={"xs": 12, "lg": 4},
                 content=ft.Row(
                     [
-                        _header_control("Last 7 days", "Historical comparison is not available yet"),
-                        _header_control("Filters", "Use the activity filters below"),
+                        ft.Icon(ft.Icons.FOLDER_OUTLINED, size=28, color=ui.TEXT_SECONDARY),
+                        ft.Column(
+                            [
+                                ft.Text("Local workspace", size=24, weight=ft.FontWeight.W_600, color=ui.TEXT),
+                                ft.Text("Local findings and recorded activity", size=12, color=ui.TEXT_MUTED),
+                            ],
+                            spacing=4,
+                        ),
                     ],
-                    spacing=10,
-                    alignment=ft.MainAxisAlignment.END,
+                    spacing=16,
                 ),
             ),
+            ft.Container(col={"xs": 12, "lg": 8}, content=metrics_row),
         ],
-        spacing=12,
-        run_spacing=10,
+        spacing=24,
+        run_spacing=16,
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
 
     root = ft.Column(
         [
             header,
+            ft.Divider(height=1, color=ui.BORDER),
+            activity_table,
+            ft.Divider(height=1, color=ui.BORDER),
             ft.ResponsiveRow(
                 [
-                    ft.Container(
-                        col={"xs": 12, "xl": 9},
-                        content=ft.Column([metrics_row, activity_table], spacing=14),
-                    ),
                     operational,
+                    ft.Container(
+                        col={"xs": 12, "lg": 6},
+                        padding=ft.Padding(left=24, top=0, right=0, bottom=0),
+                        content=ft.Column(
+                            [
+                                ft.Row(
+                                    [
+                                        ft.Icon(ft.Icons.PSYCHOLOGY_OUTLINED, size=24, color=ui.BRAND),
+                                        ft.Text("AI observations", size=18, weight=ft.FontWeight.W_600, color=ui.TEXT),
+                                    ],
+                                    spacing=12,
+                                ),
+                                ft.Text("Local AI is not available in this build", size=14, color=ui.TEXT_SECONDARY),
+                                ft.Text(
+                                    "Inspect source records in Findings and Correlations", size=14, color=ui.TEXT_MUTED
+                                ),
+                            ],
+                            spacing=16,
+                        ),
+                    ),
                 ],
-                spacing=12,
+                spacing=24,
                 run_spacing=12,
                 vertical_alignment=ft.CrossAxisAlignment.START,
-                on_size_change=_layout_changed,
             ),
         ],
         spacing=14,

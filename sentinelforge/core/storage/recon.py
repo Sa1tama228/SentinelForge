@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from .. import config
-from .connection import FINDING_STATUSES, _json_dump, _json_load, _merge_list, cursor, now
+# Explicit aliases preserve existing exports through the storage facade.
+from .. import config as config
+from .connection import FINDING_STATUSES as FINDING_STATUSES
+from .connection import cursor, now
+
 
 def get_or_create_target(domain: str) -> int:
     with cursor() as c:
@@ -63,11 +66,9 @@ def recon_source_status(target_id: int) -> list[sqlite3.Row]:
         return c.fetchall()
 
 
-def recent_targets(limit: int = 50) -> list[sqlite3.Row]:
+def recent_targets(limit: int | None = 50) -> list[sqlite3.Row]:
     with cursor() as c:
-        c.execute(
-            "SELECT * FROM recon_targets ORDER BY id DESC LIMIT ?", (limit,)
-        )
+        c.execute("SELECT * FROM recon_targets ORDER BY id DESC LIMIT ?", (-1 if limit is None else limit,))
         return c.fetchall()
 
 

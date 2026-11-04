@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "sentinelforge"
 version = "0.1.0"
@@ -7,6 +11,7 @@ dependencies = [
   "flet[desktop]>=0.85.3,<0.86",
   "dnspython>=2.8.0,<3",
   "httpx>=0.28.1,<0.29",
+  "idna>=3.10,<4",
 ]
 
 [project.scripts]
@@ -22,6 +27,15 @@ dev = [
   "pytest>=9.0.2,<10",
   "ruff>=0.9,<1",
 ]
+
+[tool.setuptools.packages.find]
+include = ["sentinelforge", "sentinelforge.*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+sentinelforge = ["resources/*.mp3", "resources/fonts/*.ttf", "resources/fonts/OFL.txt"]
+"sentinelforge.modules.scanner" = ["cve_db.json"]
+"sentinelforge.modules.scanner.vuln" = ["product_aliases.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

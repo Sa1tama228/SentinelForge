@@ -68,10 +68,10 @@ def _fetch_and_detect(url: str, timeout: float, ua: str) -> dict:
                 final_url = str(resp.url)
                 headers_raw = "\n".join(f"{k}: {v}" for k, v in resp.headers.items())
                 body = decode_network_text(resp.content[:200000])
-            except ImportError:
+            except ImportError as exc:
                 if client == "httpx":
                     raise
-                raise RuntimeError("__urllib_fallback__")
+                raise RuntimeError("__urllib_fallback__") from exc
         else:
             raise RuntimeError("__urllib_fallback__")
     except RuntimeError as exc:

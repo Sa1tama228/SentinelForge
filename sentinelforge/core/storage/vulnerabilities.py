@@ -4,8 +4,11 @@ import json
 import re
 import sqlite3
 
-from .. import config
-from .connection import FINDING_STATUSES, _json_dump, _json_load, _merge_list, cursor, now
+# Explicit aliases preserve existing exports through the storage facade.
+from .. import config as config
+from .connection import FINDING_STATUSES as FINDING_STATUSES
+from .connection import cursor, now
+
 
 def vulnerability_sources() -> list[sqlite3.Row]:
     with cursor() as c:
@@ -14,10 +17,10 @@ def vulnerability_sources() -> list[sqlite3.Row]:
 
 
 def vulnerability_source_freshness(max_age_hours: int = 48) -> list[dict]:
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     out: list[dict] = []
-    current = datetime.now(timezone.utc)
+    current = datetime.now(UTC)
     for row in vulnerability_sources():
         source_timestamp = _parse_source_version_timestamp(row["source_version"] or "")
         last_success = row["last_success_ts"] or ""
@@ -29,7 +32,7 @@ def vulnerability_source_freshness(max_age_hours: int = 48) -> list[dict]:
             stale = age_hours > max_age_hours
         elif last_success:
             try:
-                parsed = datetime.strptime(last_success, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                parsed = datetime.strptime(last_success, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
                 age_hours = round((current - parsed).total_seconds() / 3600, 2)
                 stale = age_hours > max_age_hours
             except ValueError:
@@ -39,7 +42,7 @@ def vulnerability_source_freshness(max_age_hours: int = 48) -> list[dict]:
 
 
 def _parse_source_version_timestamp(value: str):
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     candidates = []
     for match in re.finditer(
@@ -55,8 +58,8 @@ def _parse_source_version_timestamp(value: str):
         except ValueError:
             continue
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        candidates.append(parsed.astimezone(timezone.utc))
+            parsed = parsed.replace(tzinfo=UTC)
+        candidates.append(parsed.astimezone(UTC))
     return max(candidates) if candidates else None
 
 

@@ -23,7 +23,7 @@ def _kv(title: str, value) -> ft.Control:
     return ft.Column(
         [
             ft.Text(title, size=12, weight=ft.FontWeight.BOLD, color=ui.MUTED),
-            ft.Text(text, size=11, selectable=True, color=ui.TEXT),
+            ft.Text(text, size=12, selectable=True, color=ui.TEXT),
         ],
         spacing=2,
     )
@@ -53,21 +53,19 @@ def _graph_panel(asset_id: int) -> ft.Control:
         rows.append(
             ft.Container(
                 padding=8,
-                border_radius=8,
-                bgcolor=ui.PANEL_2,
-                border=ui.border(),
+                border=ft.Border(bottom=ft.BorderSide(1, ui.BORDER)),
                 content=ft.Column(
                     [
                         ft.Text(
                             f"{item['type']}  |  {item['label']}",
-                            size=11,
+                            size=12,
                             weight=ft.FontWeight.BOLD,
                             color=ui.TEXT,
                             selectable=True,
                         ),
                         ft.Text(
                             f"{item['edge']}  confidence={float(item['confidence']):.2f}  {detail}",
-                            size=10,
+                            size=12,
                             color=ui.MUTED,
                             selectable=True,
                         ),
@@ -77,7 +75,7 @@ def _graph_panel(asset_id: int) -> ft.Control:
             )
         )
     if not neighbors:
-        rows.append(ft.Text("No graph evidence yet", size=11, color=ui.MUTED))
+        rows.append(ft.Text("No graph evidence yet", size=12, color=ui.MUTED))
     return ui.panel(ft.Column(rows, spacing=8), padding=12)
 
 
@@ -101,8 +99,8 @@ def render(page: ft.Page) -> ft.Control:
             content=ft.Column(
                 [
                     ft.Text(row["hostname"], size=13, weight=ft.FontWeight.BOLD, color=ui.TEXT, selectable=True),
-                    ft.Text(f"IPs: {', '.join(ips) or '-'}", size=10, color=ui.MUTED, selectable=True),
-                    ft.Text(f"Services: {len(services)}  Findings: {len(findings)}", size=10, color=ui.MUTED),
+                    ft.Text(f"IPs: {', '.join(ips) or '-'}", size=12, color=ui.MUTED, selectable=True),
+                    ft.Text(f"Services: {len(services)}  Findings: {len(findings)}", size=12, color=ui.MUTED),
                 ],
                 spacing=3,
             ),
@@ -116,17 +114,18 @@ def render(page: ft.Page) -> ft.Control:
         _render_detail()
         try:
             page.update()
-        except Exception:
+        except RuntimeError:
+            # Worker events can arrive after the page closes
             pass
 
     def _render_detail() -> None:
         detail.controls.clear()
         if state["asset_id"] is None:
-            detail.controls.append(ft.Text("Run scanner or recon to create assets.", color=ui.MUTED))
+            detail.controls.append(ft.Text("Run scanner or recon to create assets", color=ui.MUTED))
             return
         row = db.asset_by_id(int(state["asset_id"]))
         if row is None:
-            detail.controls.append(ft.Text("Selected asset no longer exists.", color=ui.MUTED))
+            detail.controls.append(ft.Text("Selected asset no longer exists", color=ui.MUTED))
             return
         notes.value = row["notes"] or ""
         findings = db.asset_findings(row["id"])
@@ -137,8 +136,8 @@ def render(page: ft.Page) -> ft.Control:
                 ft.Row(
                     [
                         ui.badge(row["source"] or "asset", width=72),
-                        ft.Text(f"First seen: {row['first_seen']}", size=11, color=ui.MUTED),
-                        ft.Text(f"Last seen: {row['last_seen']}", size=11, color=ui.MUTED),
+                        ft.Text(f"First seen: {row['first_seen']}", size=12, color=ui.MUTED),
+                        ft.Text(f"Last seen: {row['last_seen']}", size=12, color=ui.MUTED),
                     ],
                     spacing=10,
                 ),
@@ -218,14 +217,8 @@ def render(page: ft.Page) -> ft.Control:
 
     export_row = ft.Row(
         [
-            ui.action_button("TXT", "TXT", _export("txt"), width=74),
-            ui.action_button("JSON", "JS", _export("json"), width=82),
-            ui.action_button("CSV", "CSV", _export("csv"), width=78),
-            ui.action_button("HTML", "HT", _export("html"), width=86),
-            ui.action_button("SARIF", "SA", _export("sarif"), width=88),
-            ui.action_button("STIX", "ST", _export("stix"), width=82),
-            ui.action_button("MD", "MD", _export("md"), width=72),
-            ui.action_button("Clear assets", "CLR", _clear_assets, width=112),
+            ui.export_menu(_export),
+            ui.action_button("Clear assets", "CLR", _clear_assets, width=144),
         ],
         spacing=8,
         wrap=True,
@@ -240,7 +233,7 @@ def render(page: ft.Page) -> ft.Control:
             spacing=8,
             expand=True,
         ),
-        width=340,
+        width=268,
         padding=14,
     )
     detail_panel = ui.panel(
@@ -251,7 +244,7 @@ def render(page: ft.Page) -> ft.Control:
     return ft.Column(
         [
             ft.Row(
-                [ft.Text("Assets", size=18, weight=ft.FontWeight.BOLD, color=ui.TEXT), export_row],
+                [ft.Text("Assets", size=22, weight=ft.FontWeight.BOLD, color=ui.TEXT), export_row],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
             ft.Row(

@@ -11,7 +11,7 @@ except Exception:  # pragma: no cover - packaging is expected but optional
     Version = None
 
 
-class MatchResult(str, Enum):
+class MatchResult(str, Enum):  # noqa: UP042 -- StrEnum changes the public str(member) contract
     VULNERABLE = "vulnerable"
     NOT_VULNERABLE = "not_vulnerable"
     UNKNOWN = "unknown"

@@ -5,9 +5,9 @@ import shutil
 import sys
 from pathlib import Path
 
-from .scanner import nikto
-from .analysis import source_quality
 from ..core import config, db
+from .analysis import source_quality
+from .scanner import nikto
 
 
 def run() -> dict:

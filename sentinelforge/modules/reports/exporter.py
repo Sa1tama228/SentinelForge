@@ -2,14 +2,22 @@ from __future__ import annotations
 
 import csv
 import html
+import ipaddress
 import json
+import re
+import tempfile
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
+import idna
+
+from ... import __version__
 from ...core import config, db
 from ..analysis import attack_paths
 
 FORMATS = ["txt", "json", "csv", "html", "sarif", "stix", "md"]
+_STIX_SCO_NAMESPACE = uuid.UUID("00abedb4-aa42-466c-9c01-fed23315a9b7")
 
 
 def export_inventory(fmt: str, out_dir: str | None = None, filters: dict | None = None) -> Path:
@@ -31,25 +39,29 @@ def export_inventory(fmt: str, out_dir: str | None = None, filters: dict | None 
         "stix": _write_stix,
         "md": _write_markdown,
     }
-    writers[fmt](path, payload)
+    with tempfile.NamedTemporaryFile(dir=base, prefix=".sentinelforge-", suffix=f".{fmt}", delete=False) as temporary:
+        staged = Path(temporary.name)
+    try:
+        writers[fmt](staged, payload)
+        staged.replace(path)
+    finally:
+        staged.unlink(missing_ok=True)
     return path
 
 
 def inventory_payload(filters: dict | None = None) -> dict:
     filters = filters or {}
-    all_finding_rows = db.findings(limit=10000)
+    all_finding_rows = db.findings(limit=None)
     match_cache = db.vulnerability_matches_for_findings([int(row["id"]) for row in all_finding_rows])
     included_findings = [
-        _finding_dict(row, match_cache)
-        for row in all_finding_rows
-        if _include_finding(row, filters, match_cache)
+        _finding_dict(row, match_cache) for row in all_finding_rows if _include_finding(row, filters, match_cache)
     ]
     findings_by_asset: dict[int, list[dict]] = {}
     for finding in included_findings:
         asset_id = finding.get("asset_id")
         if asset_id is not None:
             findings_by_asset.setdefault(int(asset_id), []).append(finding)
-    asset_rows = db.assets(limit=10000)
+    asset_rows = db.assets(limit=None)
     asset_ids = [int(row["id"]) for row in asset_rows]
     packages_by_asset = db.asset_packages_for_assets(asset_ids)
     history_by_asset = db.asset_scan_history_for_assets(asset_ids)
@@ -60,15 +72,15 @@ def inventory_payload(filters: dict | None = None) -> dict:
             {
                 "id": asset_id,
                 "hostname": row["hostname"],
-                "normalized_ips": _loads(row["normalized_ips"], []),
+                "normalized_ips": _loads(row["normalized_ips"], [], label=f"asset #{asset_id} normalized_ips"),
                 "first_seen": row["first_seen"],
                 "last_seen": row["last_seen"],
                 "source": row["source"],
-                "tags": _loads(row["tags"], []),
-                "open_services": _loads(row["open_services"], []),
-                "dns_records": _loads(row["dns_records"], {}),
-                "certificates": _loads(row["certificates"], []),
-                "technologies": _loads(row["technologies"], []),
+                "tags": _loads(row["tags"], [], label=f"asset #{asset_id} tags"),
+                "open_services": _loads(row["open_services"], [], label=f"asset #{asset_id} open_services"),
+                "dns_records": _loads(row["dns_records"], {}, label=f"asset #{asset_id} dns_records"),
+                "certificates": _loads(row["certificates"], [], label=f"asset #{asset_id} certificates"),
+                "technologies": _loads(row["technologies"], [], label=f"asset #{asset_id} technologies"),
                 "notes": row["notes"],
                 "packages": [dict(pkg) for pkg in packages_by_asset.get(int(asset_id), [])],
                 "findings": findings_by_asset.get(int(asset_id), []),
@@ -80,7 +92,7 @@ def inventory_payload(filters: dict | None = None) -> dict:
         "summary": _summary(assets, included_findings),
         "assets": assets,
         "findings": included_findings,
-        "attack_paths": attack_paths.analyze(limit=50),
+        "attack_paths": attack_paths.analyze(limit=None),
     }
 
 
@@ -116,29 +128,51 @@ def _epss_score(value) -> float:
         return 0.0
 
 
-def _loads(value: str, default):
-    try:
-        return json.loads(value or "")
-    except json.JSONDecodeError:
+def _loads(value: str, default, *, label: str):
+    if not value:
         return default
+    try:
+        result = json.loads(value, parse_constant=_invalid_json_constant, object_pairs_hook=_unique_json_object)
+    except ValueError as exc:
+        raise ValueError(f"Invalid {label}: {exc}") from exc
+    if not isinstance(result, type(default)):
+        raise ValueError(f"Invalid {label}: expected a {type(default).__name__}")
+    return result
+
+
+def _invalid_json_constant(value: str):
+    raise ValueError(f"Non-finite JSON number: {value}")
+
+
+def _unique_json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _html_text(value) -> str:
+    text = "" if value is None else str(value)
+    if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ud800-\udfff\ufdd0-\ufdef]", text) or any(
+        ord(char) & 0xFFFF in {0xFFFE, 0xFFFF} for char in text
+    ):
+        raise ValueError("HTML and Markdown cannot represent this control character; use JSON to preserve the data")
+    return html.escape(text, quote=False)
 
 
 def _csv_cell(value) -> str:
     text = "" if value is None else str(value)
-    if text.startswith(("=", "+", "-", "@")):
+    if text.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")) or text.startswith(("\t", "\r", "\n")):
         return "'" + text
     return text
 
 
 def _md_text(value) -> str:
-    text = "" if value is None else str(value)
-    return (
-        text.replace("\\", "\\\\")
-        .replace("|", "\\|")
-        .replace("\r\n", "<br>")
-        .replace("\n", "<br>")
-        .replace("\r", "<br>")
-    )
+    text = _html_text(value)
+    text = re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", text)
+    return text.replace("\r\n", "<br>").replace("\n", "<br>").replace("\r", "<br>")
 
 
 def _finding_dict(row, match_cache: dict[int, list] | None = None) -> dict:
@@ -151,7 +185,7 @@ def _finding_dict(row, match_cache: dict[int, list] | None = None) -> dict:
     out["vulnerability_matches"] = [
         {
             **dict(match),
-            "evidence": _loads(match["evidence_json"], {}),
+            "evidence": _loads(match["evidence_json"], {}, label=f"vulnerability match #{match['id']} evidence_json"),
         }
         for match in matches
     ]
@@ -164,14 +198,14 @@ def _summary(assets: list[dict], findings: list[dict]) -> dict:
     for finding in findings:
         severities[finding["severity"]] = severities.get(finding["severity"], 0) + 1
         statuses[finding["status"]] = statuses.get(finding["status"], 0) + 1
-    public_assets = [
-        asset for asset in assets
-        if any(_is_public_ip(ip) for ip in asset.get("normalized_ips", []))
-    ]
+    public_assets = [asset for asset in assets if any(_is_public_ip(ip) for ip in asset.get("normalized_ips", []))]
     changed_assets = [
-        asset for asset in assets
-        if any("delta " in str(item.get("summary", "")) and "none" not in str(item.get("summary", "")).lower()
-               for item in asset.get("scan_history", [])[:3])
+        asset
+        for asset in assets
+        if any(
+            "delta " in str(item.get("summary", "")) and "none" not in str(item.get("summary", "")).lower()
+            for item in asset.get("scan_history", [])[:3]
+        )
     ]
     return {
         "asset_count": len(assets),
@@ -180,7 +214,7 @@ def _summary(assets: list[dict], findings: list[dict]) -> dict:
         "severity_counts": severities,
         "status_counts": statuses,
         "changed_asset_count": len(changed_assets),
-        "changed_assets": [asset["hostname"] for asset in changed_assets[:10]],
+        "changed_assets": [asset["hostname"] for asset in changed_assets],
     }
 
 
@@ -203,8 +237,6 @@ def _summary_lines(payload: dict) -> list[str]:
 
 
 def _is_public_ip(value: str) -> bool:
-    import ipaddress
-
     try:
         addr = ipaddress.ip_address(value)
     except ValueError:
@@ -213,22 +245,46 @@ def _is_public_ip(value: str) -> bool:
 
 
 def _write_json(path: Path, payload: dict) -> None:
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False), encoding="utf-8")
 
 
 def _write_txt(path: Path, payload: dict) -> None:
     lines = ["SentinelForge report", "", *_summary_lines(payload), ""]
     for asset in payload["assets"]:
-        lines.extend([
-            f"Asset: {asset['hostname']}",
-            f"IPs: {', '.join(asset['normalized_ips']) or '-'}",
-            f"Seen: {asset['first_seen']} -> {asset['last_seen']}",
-            f"Tags: {', '.join(asset['tags']) or '-'}",
-            f"Technologies: {', '.join(asset['technologies']) or '-'}",
-            f"Open services: {len(asset['open_services'])}",
-            f"Findings: {len(asset['findings'])}",
-            "",
-        ])
+        lines.extend(
+            [
+                f"Asset: {asset['hostname']}",
+                f"IPs: {', '.join(asset['normalized_ips']) or '-'}",
+                f"Seen: {asset['first_seen']} -> {asset['last_seen']}",
+                f"Tags: {', '.join(asset['tags']) or '-'}",
+                f"Technologies: {', '.join(asset['technologies']) or '-'}",
+                f"Open services: {len(asset['open_services'])}",
+                f"Findings: {len(asset['findings'])}",
+                "",
+            ]
+        )
+    asset_names = {asset["id"]: asset["hostname"] for asset in payload["assets"]}
+    for finding in payload["findings"]:
+        lines.extend(
+            [
+                f"Finding SF-{finding['id']}: {finding['title']}",
+                f"Asset: {asset_names.get(finding.get('asset_id'), '-')}",
+                f"Severity: {finding['severity']} | Status: {finding['status']} | Confidence: {finding['confidence']}",
+                "Evidence:",
+                finding.get("evidence") or "",
+                "Remediation:",
+                finding.get("remediation") or "",
+                "",
+            ]
+        )
+        if finding.get("vulnerability_matches"):
+            lines.extend(
+                [
+                    "Advisory matches:",
+                    json.dumps(finding["vulnerability_matches"], ensure_ascii=False, allow_nan=False),
+                    "",
+                ]
+            )
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -250,8 +306,8 @@ def _write_markdown(path: Path, payload: dict) -> None:
         )
     attack_path_items = payload.get("attack_paths", {}).get("paths", [])
     if attack_path_items:
-        lines.extend(["", "## Top Attack Paths", ""])
-        for attack_path in attack_path_items[:10]:
+        lines.extend(["", "## Attack Paths", ""])
+        for attack_path in attack_path_items:
             lines.extend(
                 [
                     f"### {_md_text(attack_path.get('title'))}",
@@ -266,16 +322,18 @@ def _write_markdown(path: Path, payload: dict) -> None:
             )
     lines.extend(["## Assets", ""])
     for asset in payload["assets"]:
-        lines.extend([
-            f"### {_md_text(asset['hostname'])}",
-            f"- IPs: {_md_text(', '.join(asset['normalized_ips']) or '-')}",
-            f"- First seen: {_md_text(asset['first_seen'])}",
-            f"- Last seen: {_md_text(asset['last_seen'])}",
-            f"- Source: {_md_text(asset['source'] or '-')}",
-            f"- Tags: {_md_text(', '.join(asset['tags']) or '-')}",
-            f"- Technologies: {_md_text(', '.join(asset['technologies']) or '-')}",
-            "",
-        ])
+        lines.extend(
+            [
+                f"### {_md_text(asset['hostname'])}",
+                f"- IPs: {_md_text(', '.join(asset['normalized_ips']) or '-')}",
+                f"- First seen: {_md_text(asset['first_seen'])}",
+                f"- Last seen: {_md_text(asset['last_seen'])}",
+                f"- Source: {_md_text(asset['source'] or '-')}",
+                f"- Tags: {_md_text(', '.join(asset['tags']) or '-')}",
+                f"- Technologies: {_md_text(', '.join(asset['technologies']) or '-')}",
+                "",
+            ]
+        )
         if asset["open_services"]:
             lines.append("| Port | Proto | Service | Version |")
             lines.append("| --- | --- | --- | --- |")
@@ -285,14 +343,29 @@ def _write_markdown(path: Path, payload: dict) -> None:
                     f"{_md_text(svc.get('service', ''))} | {_md_text(svc.get('version', ''))} |"
                 )
             lines.append("")
-    lines.extend(["## Findings", "", "| Severity | Status | Title | Asset | Confidence |", "| --- | --- | --- | --- | --- |"])
+    lines.extend(
+        ["## Findings", "", "| Severity | Status | Title | Asset | Confidence |", "| --- | --- | --- | --- | --- |"]
+    )
+    asset_names = {asset["id"]: asset["hostname"] for asset in payload["assets"]}
     for finding in payload["findings"]:
-        asset = next((a["hostname"] for a in payload["assets"] if a["id"] == finding.get("asset_id")), "-")
+        asset = asset_names.get(finding.get("asset_id"), "-")
         lines.append(
             f"| {_md_text(finding['severity'])} | {_md_text(finding['status'])} | "
             f"{_md_text(finding['title'])} | {_md_text(asset)} | {_md_text(finding['confidence'])} |"
         )
     lines.append("")
+    lines.extend(["## Finding Evidence", ""])
+    for finding in payload["findings"]:
+        lines.extend(
+            [
+                f"### SF-{finding['id']}: {_md_text(finding['title'])}",
+                "",
+                _md_text(finding.get("evidence") or "No evidence recorded"),
+                "",
+                f"Remediation: {_md_text(finding.get('remediation') or 'No remediation recorded')}",
+                "",
+            ]
+        )
     lines.extend(["## Vulnerability Exposure Details", ""])
     for finding in payload["findings"]:
         for match in finding.get("vulnerability_matches", []):
@@ -338,19 +411,32 @@ def _write_csv(path: Path, payload: dict) -> None:
 
 def _write_html(path: Path, payload: dict) -> None:
     rows = []
+    details = []
     asset_names = {a["id"]: a["hostname"] for a in payload["assets"]}
     for finding in payload["findings"]:
         rows.append(
             "<tr>"
-            f"<td>{html.escape(finding['severity'])}</td>"
-            f"<td>{html.escape(finding['status'])}</td>"
-            f"<td>{html.escape(finding['title'])}</td>"
-            f"<td>{html.escape(asset_names.get(finding.get('asset_id'), '-'))}</td>"
-            f"<td>{html.escape(finding['confidence'])}</td>"
+            f"<td>{_html_text(finding['severity'])}</td>"
+            f"<td>{_html_text(finding['status'])}</td>"
+            f"<td>{_html_text(finding['title'])}</td>"
+            f"<td>{_html_text(asset_names.get(finding.get('asset_id'), '-'))}</td>"
+            f"<td>{_html_text(finding['confidence'])}</td>"
             "</tr>"
         )
+        matches = finding.get("vulnerability_matches") or []
+        details.append(
+            f"<details><summary>SF-{finding['id']}: {_html_text(finding['title'])}</summary>"
+            f"<h3>Observed evidence</h3><pre>{_html_text(finding.get('evidence'))}</pre>"
+            f"<h3>Remediation</h3><pre>{_html_text(finding.get('remediation'))}</pre>"
+            + (
+                f"<h3>Advisory matches</h3><pre>{_html_text(json.dumps(matches, ensure_ascii=False, allow_nan=False))}</pre>"
+                if matches
+                else ""
+            )
+            + "</details>"
+        )
     body = f"""<!doctype html>
-<html><head><meta charset="utf-8"><title>SentinelForge Report</title>
+<html lang="en"><head><meta charset="utf-8"><title>SentinelForge Report</title>
 <style>
 body{{font-family:Arial,sans-serif;background:#08110f;color:#edf7f3;margin:24px}}
 table{{border-collapse:collapse;width:100%;margin-top:12px}}td,th{{border:1px solid #263834;padding:8px}}
@@ -358,13 +444,15 @@ th{{background:#14231f}}.card{{border:1px solid #263834;padding:12px;margin:8px 
 </style></head><body>
 <h1>SentinelForge Report</h1>
 <h2>Executive Summary</h2>
-<div class="grid">{''.join(f"<div class='card'>{html.escape(line)}</div>" for line in _summary_lines(payload))}</div>
+<div class="grid">{"".join(f"<div class='card'>{_html_text(line)}</div>" for line in _summary_lines(payload))}</div>
 <h2>Assets</h2>
-{''.join(f"<div class='card'><b>{html.escape(a['hostname'])}</b><br>IPs: {html.escape(', '.join(a['normalized_ips']) or '-')}<br>Technologies: {html.escape(', '.join(a['technologies']) or '-')}</div>" for a in payload['assets'])}
+{"".join(f"<div class='card'><b>{_html_text(a['hostname'])}</b><br>IPs: {_html_text(', '.join(a['normalized_ips']) or '-')}<br>Technologies: {_html_text(', '.join(a['technologies']) or '-')}</div>" for a in payload["assets"])}
 <h2>Findings</h2>
-<table><tr><th>Severity</th><th>Status</th><th>Title</th><th>Asset</th><th>Confidence</th></tr>{''.join(rows)}</table>
+<table><tr><th>Severity</th><th>Status</th><th>Title</th><th>Asset</th><th>Confidence</th></tr>{"".join(rows)}</table>
+<h2>Finding Evidence</h2>
+{"".join(details)}
 <h2>Attack Paths</h2>
-{''.join(f"<div class='card'><b>{html.escape(str(p.get('title', '-')))}</b><br>Asset: {html.escape(str(p.get('asset') or '-'))}<br>Score: {html.escape(str(p.get('score', '-')))} | Confidence: {html.escape(str(p.get('confidence', '-')))}<br>Chain: {html.escape(' -> '.join(p.get('chain') or []))}<br>Evidence: {html.escape('; '.join(p.get('why_it_matters') or []))}</div>" for p in payload.get('attack_paths', {}).get('paths', []))}
+{"".join(f"<div class='card'><b>{_html_text(str(p.get('title', '-')))}</b><br>Asset: {_html_text(str(p.get('asset') or '-'))}<br>Score: {_html_text(str(p.get('score', '-')))} | Confidence: {_html_text(str(p.get('confidence', '-')))}<br>Chain: {_html_text(' -> '.join(p.get('chain') or []))}<br>Evidence: {_html_text('; '.join(p.get('why_it_matters') or []))}</div>" for p in payload.get("attack_paths", {}).get("paths", []))}
 </body></html>"""
     path.write_text(body, encoding="utf-8")
 
@@ -373,64 +461,187 @@ def _write_sarif(path: Path, payload: dict) -> None:
     rules = {}
     results = []
     asset_names = {a["id"]: a["hostname"] for a in payload["assets"]}
+    asset_indexes = {asset["id"]: index for index, asset in enumerate(payload["assets"])}
     for finding in payload["findings"]:
-        rule_id = finding["fingerprint"]
+        rule_id = f"SF-{finding['id']}"
         rules[rule_id] = {
             "id": rule_id,
-            "name": finding["title"],
-            "shortDescription": {"text": finding["title"]},
-            "help": {"text": finding.get("remediation") or ""},
+            "name": f"Finding{finding['id']}",
+            "shortDescription": {"text": finding["title"] or rule_id},
         }
+        if finding.get("remediation"):
+            rules[rule_id]["help"] = {"text": finding["remediation"]}
         results.append(
             {
                 "ruleId": rule_id,
                 "level": _sarif_level(finding["severity"]),
-                "message": {"text": finding.get("evidence") or finding["title"]},
+                "message": {"text": finding.get("evidence") or finding["title"] or rule_id},
                 "locations": [
                     {
                         "physicalLocation": {
-                            "artifactLocation": {"uri": f"asset://{asset_names.get(finding.get('asset_id'), 'unknown')}"}
+                            "artifactLocation": {
+                                "uri": f"sentinelforge://asset/{finding['asset_id']}",
+                                "index": asset_indexes[finding["asset_id"]],
+                            }
                         }
                     }
-                ],
+                ]
+                if finding.get("asset_id") in asset_names
+                else [],
+                "properties": {
+                    "finding": finding,
+                    "asset": asset_names.get(finding.get("asset_id"), ""),
+                },
             }
         )
     sarif = {
-        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
         "version": "2.1.0",
-        "runs": [{"tool": {"driver": {"name": "SentinelForge", "rules": list(rules.values())}}, "results": results}],
+        "runs": [
+            {
+                "tool": {"driver": {
+                    "name": "SentinelForge", "semanticVersion": __version__,
+                    "informationUri": "https://github.com/Sa1tama228/SentinelForge",
+                    "rules": list(rules.values()),
+                }},
+                "results": results,
+                "artifacts": [
+                    {
+                        "location": {"uri": f"sentinelforge://asset/{asset['id']}"},
+                        "properties": {"asset": {key: value for key, value in asset.items() if key != "findings"}},
+                    }
+                    for asset in payload["assets"]
+                ],
+                "properties": {"summary": payload["summary"], "attackPaths": payload["attack_paths"]},
+            }
+        ],
     }
-    path.write_text(json.dumps(sarif, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(sarif, indent=2, ensure_ascii=False, allow_nan=False), encoding="utf-8")
 
 
 def _sarif_level(severity: str) -> str:
     return {"Critical": "error", "High": "error", "Medium": "warning", "Low": "note"}.get(severity, "note")
 
 
+def _stix_observable(kind: str, value: str) -> dict:
+    # Only value contributes to IDs for these three SCO types
+    canonical = json.dumps({"value": value}, ensure_ascii=False, separators=(",", ":"))
+    return {
+        "type": kind,
+        "spec_version": "2.1",
+        "id": f"{kind}--{uuid.uuid5(_STIX_SCO_NAMESPACE, canonical)}",
+        "value": value,
+    }
+
+
 def _write_stix(path: Path, payload: dict) -> None:
-    objects = []
-    ns = uuid.UUID("7c7af1de-60f6-48f0-a9ec-6b138c2a4e3f")
+    timestamp = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    common = {"spec_version": "2.1", "created": timestamp, "modified": timestamp}
+    creator_id = f"identity--{uuid.uuid4()}"
+    objects = [{"type": "identity", "id": creator_id, **common, "name": "SentinelForge", "identity_class": "system"}]
+    observables: dict[str, dict] = {}
+    asset_refs: dict[int, list[str]] = {}
     for asset in payload["assets"]:
-        obj_type = "domain-name"
-        if asset["normalized_ips"]:
-            obj_type = "ipv6-addr" if ":" in asset["normalized_ips"][0] else "ipv4-addr"
+        refs = []
+        addresses = list(asset["normalized_ips"])
+        try:
+            host_ip = (
+                ipaddress.ip_network(asset["hostname"], strict=False)
+                if "/" in asset["hostname"]
+                else ipaddress.ip_address(asset["hostname"])
+            )
+        except ValueError:
+            host_ip = None
+        if host_ip is not None:
+            addresses.append(str(host_ip))
+        for value in addresses:
+            try:
+                if "%" in value:
+                    raise ValueError("Scoped IPv6 addresses are not STIX address values")
+                address = ipaddress.ip_network(value, strict=False) if "/" in value else ipaddress.ip_address(value)
+            except ValueError as exc:
+                raise ValueError(f"Invalid STIX address for asset #{asset['id']}: {value}") from exc
+            observable = _stix_observable(f"ipv{address.version}-addr", str(address))
+            observables[observable["id"]] = observable
+            refs.append(observable["id"])
+        refs = list(dict.fromkeys(refs))
+        if host_ip is None:
+            try:
+                domain = idna.encode(asset["hostname"].removesuffix("."), uts46=True).decode("ascii").lower()
+            except idna.IDNAError:
+                domain = ""
+            if domain:
+                observable = _stix_observable("domain-name", domain)
+                if refs:
+                    observable["resolves_to_refs"] = refs.copy()
+                observables[observable["id"]] = observable
+                refs.append(observable["id"])
+        asset_refs[asset["id"]] = refs
         objects.append(
             {
-                "type": obj_type,
-                "spec_version": "2.1",
-                "id": f"{obj_type}--{uuid.uuid5(ns, 'asset:' + str(asset['id']))}",
-                "value": asset["hostname"] if not asset["normalized_ips"] else asset["normalized_ips"][0],
+                "type": "note",
+                "id": f"note--{uuid.uuid4()}",
+                **common,
+                "created_by_ref": creator_id,
+                "abstract": f"Asset #{asset['id']}: {asset['hostname']}",
+                "content": json.dumps(
+                    {key: value for key, value in asset.items() if key != "findings"},
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ),
+                "object_refs": refs or [creator_id],
+                "labels": ["sentinelforge-asset"],
             }
         )
+    objects.extend(observables.values())
+    vulnerabilities: dict[str, str] = {}
     for finding in payload["findings"]:
+        refs = asset_refs.get(finding.get("asset_id"), []).copy()
+        for match in finding.get("vulnerability_matches", []):
+            cve = str(match["cve_id"]).upper()
+            if not re.fullmatch(r"CVE-[0-9]{4}-[0-9]{4,}", cve):
+                raise ValueError(f"Invalid CVE identifier linked to finding #{finding['id']}: {cve}")
+            if cve not in vulnerabilities:
+                vuln_id = f"vulnerability--{uuid.uuid4()}"
+                vulnerabilities[cve] = vuln_id
+                objects.append(
+                    {
+                        "type": "vulnerability",
+                        "id": vuln_id,
+                        **common,
+                        "created_by_ref": creator_id,
+                        "name": cve,
+                        "external_references": [{"source_name": "cve", "external_id": cve}],
+                    }
+                )
+            refs.append(vulnerabilities[cve])
         objects.append(
             {
-                "type": "vulnerability",
-                "spec_version": "2.1",
-                "id": f"vulnerability--{uuid.uuid5(ns, 'finding:' + str(finding['id']))}",
-                "name": finding["title"],
-                "description": finding.get("evidence") or "",
+                "type": "note",
+                "id": f"note--{uuid.uuid4()}",
+                **common,
+                "created_by_ref": creator_id,
+                "abstract": finding["title"] or f"Finding #{finding['id']}",
+                "content": json.dumps(finding, ensure_ascii=False, allow_nan=False),
+                "object_refs": list(dict.fromkeys(refs)) or [creator_id],
+                "labels": ["sentinelforge-finding"],
             }
         )
-    bundle = {"type": "bundle", "id": f"bundle--{uuid.uuid5(ns, 'report')}", "objects": objects}
-    path.write_text(json.dumps(bundle, indent=2), encoding="utf-8")
+    objects.append(
+        {
+            "type": "note",
+            "id": f"note--{uuid.uuid4()}",
+            **common,
+            "created_by_ref": creator_id,
+            "abstract": "SentinelForge report summary",
+            "content": json.dumps(
+                {"summary": payload["summary"], "attack_paths": payload["attack_paths"]},
+                ensure_ascii=False,
+                allow_nan=False,
+            ),
+            "object_refs": [creator_id],
+            "labels": ["sentinelforge-report"],
+        }
+    )
+    bundle = {"type": "bundle", "id": f"bundle--{uuid.uuid4()}", "objects": objects}
+    path.write_text(json.dumps(bundle, indent=2, ensure_ascii=False, allow_nan=False), encoding="utf-8")

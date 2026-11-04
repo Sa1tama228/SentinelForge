@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-import ssl
-import socket
-import socketserver
-import os
-import re
 import hashlib
 import logging
+import os
+import re
+import socket
+import socketserver
+import ssl
 import struct
 import threading
 import uuid
 from email.parser import Parser
 from pathlib import Path
-from typing import Optional
-from urllib.parse import urlsplit, parse_qsl, urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from ...core import config, db, events
 from ...core.text import decode_network_text, encode_network_text
@@ -62,12 +61,12 @@ def _read_html_file(path_value: str, *, limit: int = 262_144) -> bytes | None:
 
 def _login_body(title: str = "Sign in") -> bytes:
     html = (
-        "<!doctype html><html><head><title>{0}</title></head><body>"
-        "<h1>{0}</h1><form method='post'>"
+        f"<!doctype html><html><head><title>{title}</title></head><body>"
+        f"<h1>{title}</h1><form method='post'>"
         "<label>Username <input name='username' autocomplete='username'></label><br>"
         "<label>Password <input name='password' type='password' autocomplete='current-password'></label><br>"
         "<button type='submit'>Sign in</button></form></body></html>"
-    ).format(title)
+    )
     return html.encode("utf-8", "replace")
 
 
@@ -170,7 +169,7 @@ def _redact_http_body(body: str) -> str:
     for key in sensitive:
         text = re.sub(
             rf"(?i)([?&\s\"']?{key}\s*[:=]\s*)[^&\s\"']+",
-            rf"\1<redacted>",
+            r"\1<redacted>",
             text,
         )
     return _truncate(text)
@@ -496,7 +495,7 @@ class HoneypotManager:
 
 
 # Module-level singleton the UI can reuse across view rebuilds.
-_manager: Optional[HoneypotManager] = None
+_manager: HoneypotManager | None = None
 
 
 def manager() -> HoneypotManager:

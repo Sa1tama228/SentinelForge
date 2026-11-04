@@ -4,7 +4,11 @@ import json
 import sqlite3
 
 from .. import config
-from .connection import FINDING_STATUSES, _json_dump, _json_load, _merge_list, cursor, now
+
+# Keep the existing public re-export; unused private helpers need not be imported.
+from .connection import FINDING_STATUSES as FINDING_STATUSES
+from .connection import cursor, now
+
 
 def add_honeypot_event(hp_type: str, src_ip: str, src_port: int, *,
                        method: str = "", path: str = "", headers: str = "",
@@ -31,11 +35,11 @@ def add_honeypot_event(hp_type: str, src_ip: str, src_port: int, *,
         return c.lastrowid or 0
 
 
-def recent_honeypot_events(limit: int = 200) -> list[sqlite3.Row]:
+def recent_honeypot_events(limit: int | None = 200) -> list[sqlite3.Row]:
     with cursor() as c:
         c.execute(
             "SELECT * FROM honeypot_events ORDER BY id DESC LIMIT ?",
-            (limit,),
+            (-1 if limit is None else limit,),
         )
         return c.fetchall()
 
@@ -67,8 +71,12 @@ def honeypot_classification_counts() -> dict[str, int]:
         return {row["classification"] or "unclassified": int(row["n"]) for row in c.fetchall()}
 
 
-def honeypot_sessions(limit: int = 100) -> list[dict]:
-    rows = recent_honeypot_events(limit=1000)
+def honeypot_sessions(limit: int | None = 100) -> list[dict]:
+    rows = recent_honeypot_events(limit=None if limit is None else 1000)
+    return group_honeypot_sessions(rows, limit=limit)
+
+
+def group_honeypot_sessions(rows, *, limit: int | None = None) -> list[dict]:
     sessions: dict[tuple[str, str], dict] = {}
     for row in rows:
         sid = _session_from_headers(row["headers"] or "") or f"{row['src_ip']}:{row['hp_type']}"

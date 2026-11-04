@@ -5,9 +5,9 @@ import tempfile
 import time
 from pathlib import Path
 
+from ..core import db
 from .analysis import attack_paths, evidence_graph, honeypot_campaigns
 from .reports import exporter
-from ..core import db
 
 PREFIX = "sf-stress-"
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
-from .service_ports import _PORT_SERVICE, looks_like_https_port
+
 import re
+
+from .service_ports import _PORT_SERVICE, looks_like_https_port
 
 
 def identify(port: int, banner: str) -> tuple[str, str]:

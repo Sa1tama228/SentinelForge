@@ -4,9 +4,11 @@ import json
 import sqlite3
 import threading
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC as _UTC
+from datetime import datetime
+from datetime import timezone as timezone
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator  # noqa: UP035 -- preserve the core.db.Iterator compatibility export
 
 from .. import config
 
@@ -499,7 +501,7 @@ def cursor() -> Iterator[sqlite3.Cursor]:
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(_UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _json_load(value: str | None, default):

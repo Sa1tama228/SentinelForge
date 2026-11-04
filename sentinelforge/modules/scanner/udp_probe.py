@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import socket
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Iterable
 
 _UDP_PAYLOADS = {
     53: b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x01",

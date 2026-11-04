@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 import fnmatch
 import ipaddress
+import json
 import socket
 import threading
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
 
 from ...core import config, db, events, jobs
 from . import delta as scan_delta
@@ -511,5 +511,5 @@ def run_due_schedules() -> list[int]:
 
 
 def _next_run_ts(interval_hours: int) -> str:
-    ts = datetime.now(timezone.utc) + timedelta(hours=max(1, interval_hours))
+    ts = datetime.now(UTC) + timedelta(hours=max(1, interval_hours))
     return ts.strftime("%Y-%m-%d %H:%M:%S")

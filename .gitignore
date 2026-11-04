@@ -1,22 +1,27 @@
-.venv/
-.pytest_cache/
-.idea/
+# Publish runtime files and the three public project documents
+/*
+!/.gitignore
+!/README.md
+!/ROADMAP.md
+!/CHANGELOG.md
+!/dashboard.png
+!/LICENSE
+!/pyproject.toml
+!/requirements.txt
+!/main.py
+!/sentinelforge/
+
+# Python modules and the assets loaded by the application
+/sentinelforge/**/*
+!/sentinelforge/**/
+!/sentinelforge/**/*.py
+!/sentinelforge/modules/scanner/cve_db.json
+!/sentinelforge/modules/scanner/vuln/product_aliases.json
+!/sentinelforge/resources/HoneyPot_warning.mp3
+!/sentinelforge/resources/fonts/Inter.ttf
+!/sentinelforge/resources/fonts/OFL.txt
+
 __pycache__/
 *.py[cod]
-data/*.db
-data/*.db-shm
-data/*.db-wal
-data/*.sqlite
-data/config.json
-
-# Local credentials and runtime artifacts
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-*.pfx
-*.p12
-*.session
-*.log
-.git
+**/.agents/
+**/.codex/

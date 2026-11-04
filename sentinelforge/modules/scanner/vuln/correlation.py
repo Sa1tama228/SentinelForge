@@ -7,10 +7,11 @@ from functools import lru_cache
 from pathlib import Path
 
 from ....core import db
+from .advisories import advisory_state
 from .cpe import CPECandidate, candidates_for
 from .fingerprint_model import ServiceFingerprint
-from .advisories import advisory_state
-from .verification import recommended_steps, warning as verification_warning
+from .verification import recommended_steps
+from .verification import warning as verification_warning
 from .version_matcher import MatchResult, VersionRange, evaluate_range
 
 _DEMO_CVE_DB = Path(__file__).parents[1] / "cve_db.json"

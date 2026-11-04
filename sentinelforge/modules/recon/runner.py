@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import threading
-import hashlib
 from concurrent.futures import ThreadPoolExecutor
 
 from ...core import config, db, events, jobs
-from . import dns_records, exposure, subdomains, takeover, whois_rdap, techstack
 from . import diff as recon_diff
+from . import dns_records, exposure, subdomains, takeover, techstack, whois_rdap
 
 
 def run_all(domain: str) -> int:
@@ -203,7 +203,7 @@ def _dns_findings(asset_id: int, domain: str, dns_data: dict) -> None:
             "Missing DMARC record",
             "Medium",
             "High",
-            "No DMARC TXT record was found at _dmarc.%s." % domain,
+            f"No DMARC TXT record was found at _dmarc.{domain}.",
             "Publish a DMARC policy and monitor aggregate reports before enforcement.",
             "recon:dns:dmarc",
         )

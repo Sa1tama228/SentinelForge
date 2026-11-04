@@ -9,8 +9,12 @@ from .evidence_graph import EvidenceGraph, EvidenceNode
 STRONG_MATCH_STATUSES = {"confirmed_candidate", "likely_candidate"}
 
 
-def analyze(limit: int = 25, *, include_low: bool = True) -> dict:
-    graph = evidence_graph.build()
+def analyze(limit: int | None = 25, *, include_low: bool = True) -> dict:
+    graph = (
+        evidence_graph.build(limit_assets=None, honeypot_limit=None, finding_limit=None, recon_limit=None)
+        if limit is None
+        else evidence_graph.build()
+    )
     paths = []
     for context in evidence_graph.asset_contexts(graph):
         paths.extend(_vulnerability_paths(graph, context))

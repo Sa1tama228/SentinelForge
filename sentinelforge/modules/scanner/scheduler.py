@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import threading
-import time
 
 from ...core import events
 from .runner import run_due_schedules

@@ -19,6 +19,9 @@ def play_warning() -> None:
     if not hp.get("alert_sound_enabled", True):
         return
     path = Path(hp.get("alert_sound_path") or "").expanduser()
+    # Preserve saved configurations using the old repository-relative default.
+    if not path.is_file() and path == config.ROOT / "sounds" / "HoneyPot_warning.mp3":
+        path = Path(config.DEFAULTS["honeypot"]["alert_sound_path"])
     if not path.is_file():
         return
     if sys.platform != "win32":

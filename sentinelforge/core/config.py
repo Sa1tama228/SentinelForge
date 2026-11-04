@@ -5,8 +5,9 @@ import os
 from pathlib import Path
 from typing import Any
 
-# Project root = parent of the 'sentinelforge' package dir.
-ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_DIR = Path(__file__).resolve().parents[1]
+# Repository root in a checkout; package container for an installed wheel.
+ROOT = PACKAGE_DIR.parent
 DATA_DIR = Path(os.environ.get("SF_DATA_DIR", ROOT / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -59,7 +60,7 @@ DEFAULTS: dict[str, Any] = {
         "geoip_enabled": False,
         "geoip_db_path": "",
         "alert_sound_enabled": True,
-        "alert_sound_path": str(ROOT / "sounds" / "HoneyPot_warning.mp3"),
+        "alert_sound_path": str(PACKAGE_DIR / "resources" / "HoneyPot_warning.mp3"),
         "credential_storage": "redacted",
     },
     "scanner": {

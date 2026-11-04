@@ -6,12 +6,12 @@ import sys
 
 from . import __version__
 from .core import db
+from .modules import doctor, stress
 from .modules.analysis import attack_paths
 from .modules.recon import runner as recon_runner
 from .modules.reports import exporter
 from .modules.scanner import runner as scan_runner
 from .modules.scanner.vuln import sync
-from .modules import doctor, stress
 
 
 def main(argv: list[str] | None = None) -> int:

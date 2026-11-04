@@ -3,18 +3,22 @@ from __future__ import annotations
 import csv
 import gzip
 import json
+import logging
 import re
+import threading
 import time
-from datetime import datetime, timedelta, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Iterable
 
-from ....core import config, db
-from . import advisories
-from . import correlation
+from ....core import config, db, jobs
+from . import advisories, correlation
 
 CVE_ALIASES = ("cve", "cve_id", "cveID", "CVE", "id", "CVE_data_meta.ID", "cve.id")
 DATE_ALIASES = ("date", "score_date", "published", "date_published", "published_ts", "timestamp")
+SOURCE_SYNC_JOB_ID = "vulnerability-source-sync"
+_source_sync_lock = threading.Lock()
+logger = logging.getLogger(__name__)
 
 IMPORT_FORMATS = {
     "nvd_json": {
@@ -123,8 +127,33 @@ def _validation_result(kind: str, path: str | Path, total: int, importable: int,
     }
 
 
-def sync_configured_sources() -> dict[str, int]:
-    cfg = config.load().get("scanner", {})
+def start_source_sync(paths: dict[str, str]) -> bool:
+    """Start one process-wide import using the submitted paths without saving settings"""
+    paths = dict(paths)
+    with _source_sync_lock:
+        current = jobs.get(SOURCE_SYNC_JOB_ID)
+        if current and current["status"] in {"queued", "running", "cancelling"}:
+            return False
+
+        def _run(_cancel_event: threading.Event) -> None:
+            try:
+                counts = sync_configured_sources(paths=paths)
+            except Exception:
+                logger.exception("Vulnerability source sync failed")
+                raise
+            summary = ", ".join(f"{key}={value}" for key, value in sorted(counts.items()))
+            jobs.update(SOURCE_SYNC_JOB_ID, label=f"Synced sources: {summary}")
+
+        try:
+            jobs.start(SOURCE_SYNC_JOB_ID, "source-sync", "Source sync running", _run)
+        except RuntimeError as exc:
+            jobs.update(SOURCE_SYNC_JOB_ID, status="failed", error=str(exc))
+            raise
+    return True
+
+
+def sync_configured_sources(*, paths: dict[str, str] | None = None) -> dict[str, int]:
+    cfg = dict(paths) if paths is not None else config.load().get("scanner", {})
     counts: dict[str, int] = {}
     nvd_disabled = False
     for key, source_name, importer in (
@@ -155,6 +184,7 @@ def set_source_enabled(name: str, enabled: bool) -> None:
         status="enabled" if enabled else "disabled",
         sync_progress=0.0,
     )
+
 
 # TODO: switch to sqlalchemy
 def import_nvd_json(path: str | Path) -> int:
@@ -422,7 +452,7 @@ def _run_with_retries(source_name: str, importer, path: str) -> int:
             if attempts >= max_attempts:
                 break
             delay = min(0.2, 0.05 * (2 ** (attempts - 1)))
-            next_retry = datetime.now(timezone.utc) + timedelta(seconds=delay)
+            next_retry = datetime.now(UTC) + timedelta(seconds=delay)
             db.update_vulnerability_source(
                 source_name,
                 status="retrying",

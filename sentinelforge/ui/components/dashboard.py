@@ -21,25 +21,15 @@ class MetricCard(ft.Container):
     def __init__(self, metric: DashboardMetric) -> None:
         accent = _accent(metric.accent)
         super().__init__(
-            height=128,
-            padding=17,
-            border_radius=ui.RADIUS_PANEL,
-            bgcolor=ui.SURFACE,
-            border=ui.border(),
+            height=64,
+            padding=ft.Padding(left=0, top=8, right=24, bottom=8),
+            border=ft.Border(right=ft.BorderSide(1, ui.BORDER)),
+            tooltip=metric.subtitle,
             col={"xs": 12, "sm": 6, "md": 3},
             content=ft.Column(
                 [
                     ft.Text(metric.title, size=12, color=ui.TEXT_SECONDARY, no_wrap=True),
-                    ft.Text(metric.value, size=29, weight=ft.FontWeight.W_600, color=ui.TEXT_PRIMARY, no_wrap=True),
-                    ft.Container(
-                        width=48,
-                        height=3,
-                        border_radius=2,
-                        bgcolor=accent if metric.available else ui.BORDER_STRONG,
-                    ),
-                    ft.Text(
-                        metric.subtitle, size=11, color=accent if metric.available else ui.TEXT_MUTED, no_wrap=True
-                    ),
+                    ft.Text(metric.value, size=24, weight=ft.FontWeight.W_600, color=accent, no_wrap=True),
                 ],
                 spacing=5,
             ),
@@ -51,9 +41,9 @@ class StatusBadge(ft.Container):
         normalized = label.strip().lower()
         color, background = {
             "critical": (ui.CRITICAL, ui.CRITICAL_SURFACE),
-            "high": (ui.CRITICAL, ui.CRITICAL_SURFACE),
+            "high": (ui.HIGH, ui.WARNING_SURFACE),
             "medium": (ui.WARNING, ui.WARNING_SURFACE),
-            "low": (ui.INFO_BLUE, ui.INFO_SURFACE),
+            "low": (ui.BRAND, ui.SURFACE_ACTIVE),
             "info": (ui.SUCCESS_TEAL, ui.SUCCESS_SURFACE),
             "running": (ui.SUCCESS_TEAL, ui.SUCCESS_SURFACE),
             "queued": (ui.INFO_BLUE, ui.INFO_SURFACE),
@@ -62,15 +52,15 @@ class StatusBadge(ft.Container):
         super().__init__(
             height=26,
             padding=ft.Padding(left=9, top=0, right=9, bottom=0),
-            border_radius=7,
+            border_radius=4,
             bgcolor=background,
             alignment=ft.Alignment(0, 0),
-            content=ft.Text(label.upper(), size=10, weight=ft.FontWeight.W_600, color=color, no_wrap=True),
+            content=ft.Text(label.title(), size=12, weight=ft.FontWeight.W_500, color=color, no_wrap=True),
         )
 
 
 class LoadingState(ft.Container):
-    def __init__(self, label: str = "Loading dashboard data...") -> None:
+    def __init__(self, label: str = "Loading dashboard data") -> None:
         super().__init__(
             height=180,
             alignment=ft.Alignment(0, 0),
@@ -89,15 +79,15 @@ class LoadingState(ft.Container):
 class EmptyState(ft.Container):
     def __init__(self, title: str, message: str) -> None:
         super().__init__(
-            height=190,
-            alignment=ft.Alignment(0, 0),
+            height=128,
+            padding=ft.Padding(left=0, top=24, right=0, bottom=24),
+            alignment=ft.Alignment(-1, -1),
             content=ft.Column(
                 [
-                    ft.Text("--", size=17, weight=ft.FontWeight.BOLD, color=ui.TEXT_MUTED),
                     ft.Text(title, size=13, weight=ft.FontWeight.W_600, color=ui.TEXT_PRIMARY),
-                    ft.Text(message, size=11, color=ui.TEXT_MUTED, text_align=ft.TextAlign.CENTER),
+                    ft.Text(message, size=14, color=ui.TEXT_MUTED),
                 ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.START,
                 tight=True,
                 spacing=7,
             ),
@@ -108,18 +98,13 @@ def _pill(label: str, value: str, selected: bool, on_select: Callable[[str], Non
     def _clicked(_event) -> None:
         on_select(value)
 
-    return ft.Container(
-        height=28,
-        padding=ft.Padding(left=11, top=0, right=11, bottom=0),
-        border_radius=7,
-        bgcolor=ui.SURFACE_ACTIVE if selected else ui.SURFACE_SECONDARY,
-        alignment=ft.Alignment(0, 0),
-        ink=True,
-        ink_color="#228B7CF6",
+    return ft.Button(
+        height=44,
+        style=ui.button_style(background=ui.SURFACE_ACTIVE if selected else ui.BACKGROUND, outlined=False),
         on_click=_clicked,
         content=ft.Text(
-            label.upper(),
-            size=10,
+            label,
+            size=14,
             weight=ft.FontWeight.W_600,
             color=ui.TEXT_PRIMARY if selected else ui.TEXT_SECONDARY,
             no_wrap=True,
@@ -139,26 +124,28 @@ class ActivityTable(ft.Container):
         on_severity_change: Callable[[str], None],
         on_search_change: Callable[[str], None],
         on_select: Callable[[DashboardActivityItem], None],
+        on_new_scan: Callable | None = None,
     ) -> None:
         self._on_type_change = on_type_change
         self._on_select = on_select
         self._selected_type = ""
         self._tabs = ft.Row(spacing=6)
         self._rows = ft.Column(spacing=0)
-        self._footer = ft.Text("", size=10, color=ui.TEXT_MUTED)
+        self._footer = ft.Text("", size=12, color=ui.TEXT_MUTED)
         self._search = ft.TextField(
-            hint_text="Search activity...",
-            height=36,
+            label="Search activity",
+            height=44,
             dense=True,
-            text_size=11,
+            text_size=14,
             on_change=lambda event: on_search_change(event.control.value or ""),
             **ui.input_kwargs(),
         )
         self._severity = ft.Dropdown(
+            label="Severity",
             value="",
-            height=38,
+            height=44,
             dense=True,
-            text_size=11,
+            text_size=14,
             on_select=lambda event: on_severity_change(event.control.value or ""),
             options=[
                 ft.dropdown.Option(key="", text="Severity: all"),
@@ -183,21 +170,29 @@ class ActivityTable(ft.Container):
         )
         super().__init__(
             padding=0,
-            border_radius=ui.RADIUS_PANEL,
-            bgcolor=ui.SURFACE,
-            border=ui.border(),
             col=12,
             content=ft.Column(
                 [
                     ft.Container(
-                        padding=ft.Padding(left=18, top=16, right=18, bottom=10),
+                        padding=ft.Padding(left=0, top=16, right=0, bottom=16),
                         content=ft.Column(
                             [
-                                ft.Text(
-                                    "Activity & findings",
-                                    size=16,
-                                    weight=ft.FontWeight.W_600,
-                                    color=ui.TEXT_PRIMARY,
+                                ft.Row(
+                                    [
+                                        ft.Text(
+                                            "Recent findings & activity",
+                                            size=22,
+                                            weight=ft.FontWeight.W_600,
+                                            color=ui.TEXT_PRIMARY,
+                                        ),
+                                        ft.Container(expand=True),
+                                        *(
+                                            [ui.action_button("New scan", ft.Icons.ADD, on_new_scan)]
+                                            if on_new_scan
+                                            else []
+                                        ),
+                                    ],
+                                    spacing=16,
                                 ),
                                 toolbar,
                             ],
@@ -208,7 +203,7 @@ class ActivityTable(ft.Container):
                     self._table_header(),
                     self._rows,
                     ft.Container(
-                        padding=ft.Padding(left=18, top=12, right=18, bottom=12),
+                        padding=ft.Padding(left=0, top=12, right=0, bottom=12),
                         content=self._footer,
                     ),
                 ],
@@ -230,15 +225,15 @@ class ActivityTable(ft.Container):
 
     @staticmethod
     def _table_header() -> ft.Control:
-        labels = (("TIME", 10), ("SEVERITY", 13), ("TYPE", 11), ("TITLE", 29), ("ASSET", 24), ("SOURCE", 13))
+        labels = (("Time", 9), ("Severity", 12), ("Type", 9), ("Title", 35), ("Asset", 20), ("Source", 15))
         return ft.Container(
-            height=34,
-            padding=ft.Padding(left=18, top=0, right=18, bottom=0),
+            height=40,
+            padding=0,
             alignment=ft.Alignment(-1, 0),
             content=ft.Row(
                 [
                     _cell(
-                        ft.Text(label, size=9, weight=ft.FontWeight.W_600, color=ui.TEXT_MUTED, no_wrap=True),
+                        ft.Text(label, size=12, weight=ft.FontWeight.W_600, color=ui.TEXT_MUTED, no_wrap=True),
                         flex,
                     )
                     for label, flex in labels
@@ -248,7 +243,7 @@ class ActivityTable(ft.Container):
         )
 
     def set_loading(self) -> None:
-        self._rows.controls = [LoadingState("Loading recent activity...")]
+        self._rows.controls = [LoadingState("Loading recent activity")]
         self._footer.value = ""
 
     def set_error(self, message: str) -> None:
@@ -258,7 +253,7 @@ class ActivityTable(ft.Container):
     def set_items(self, items: list[DashboardActivityItem]) -> None:
         if not items:
             self._rows.controls = [
-                EmptyState("No matching activity", "New findings and operational signals will appear here."),
+                EmptyState("No matching activity", "New findings and operational signals will appear here"),
             ]
             self._footer.value = "No recent items"
             return
@@ -272,7 +267,7 @@ class ActivityTable(ft.Container):
         time_label = item.timestamp.strftime("%H:%M") if item.timestamp is not None else "--:--"
         return ft.Container(
             height=49,
-            padding=ft.Padding(left=18, top=0, right=18, bottom=0),
+            padding=0,
             border=ft.Border(bottom=ft.BorderSide(1, ui.BORDER)),
             alignment=ft.Alignment(-1, 0),
             ink=True,
@@ -281,15 +276,15 @@ class ActivityTable(ft.Container):
             tooltip=f"Open {item.item_type} context",
             content=ft.Row(
                 [
-                    _cell(ft.Text(time_label, size=10, color=ui.TEXT_MUTED), 10),
-                    _cell(ft.Row([StatusBadge(item.severity)], spacing=0), 13),
-                    _cell(ft.Text(item.item_type.title(), size=10, color=ui.TEXT_SECONDARY, no_wrap=True), 11),
+                    _cell(ft.Text(time_label, size=12, color=ui.TEXT_MUTED), 9),
+                    _cell(ft.Row([StatusBadge(item.severity)], spacing=0), 12),
+                    _cell(ft.Text(item.item_type.title(), size=12, color=ui.TEXT_SECONDARY, no_wrap=True), 9),
                     _cell(
-                        ft.Text(item.title, size=11, weight=ft.FontWeight.W_500, color=ui.TEXT_PRIMARY, no_wrap=True),
-                        29,
+                        ft.Text(item.title, size=14, weight=ft.FontWeight.W_500, color=ui.TEXT_PRIMARY, no_wrap=True),
+                        35,
                     ),
-                    _cell(ft.Text(item.asset, size=10, color=ui.TEXT_SECONDARY, no_wrap=True), 24),
-                    _cell(ft.Text(item.source, size=10, color=ui.TEXT_MUTED, no_wrap=True), 13),
+                    _cell(ft.Text(item.asset, size=12, color=ui.TEXT_SECONDARY, no_wrap=True), 20),
+                    _cell(ft.Text(item.source, size=12, color=ui.TEXT_MUTED, no_wrap=True), 15),
                 ],
                 spacing=6,
             ),
@@ -298,71 +293,58 @@ class ActivityTable(ft.Container):
 
 def _summary_section(label: str, primary: ft.Control, secondary: str = "") -> ft.Control:
     controls: list[ft.Control] = [
-        ft.Text(label, size=10, weight=ft.FontWeight.W_500, color=ui.TEXT_MUTED),
+        ft.Text(label, size=12, weight=ft.FontWeight.W_500, color=ui.TEXT_MUTED),
         primary,
     ]
     if secondary:
-        controls.append(ft.Text(secondary, size=10, color=ui.TEXT_SECONDARY, no_wrap=True))
+        controls.append(ft.Text(secondary, size=12, color=ui.TEXT_SECONDARY))
     return ft.Container(
+        col={"xs": 12, "sm": 6},
         padding=ft.Padding(left=0, top=15, right=0, bottom=15),
         border=ft.Border(bottom=ft.BorderSide(1, ui.BORDER)),
-        content=ft.Column(controls, spacing=6),
+        content=ft.Column(controls, spacing=6, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
     )
 
 
 def _panel_button(label: str, on_click: Callable, *, primary: bool = False) -> ft.Control:
-    return ft.Container(
-        height=38,
-        expand=True,
-        border_radius=ui.RADIUS_CONTROL,
-        bgcolor=ui.BRAND_DARK if primary else ui.SURFACE_SECONDARY,
-        border=ui.border(ui.BRAND if primary else ui.BORDER_STRONG),
-        alignment=ft.Alignment(0, 0),
-        ink=True,
-        ink_color="#338B7CF6",
-        on_click=on_click,
-        content=ft.Text(
-            label,
-            size=11,
-            weight=ft.FontWeight.W_600,
-            color=ui.TEXT_PRIMARY if primary else ui.TEXT_SECONDARY,
-            no_wrap=True,
-        ),
+    button = ui.action_button(label, "", on_click)
+    button.expand = True
+    button.style = ui.button_style(
+        background=ui.BRAND_DARK if primary else ui.SURFACE_SECONDARY,
+        outlined=not primary,
     )
+    return button
 
 
 class OperationalSummaryPanel(ft.Container):
     def __init__(self, *, on_open_scanner: Callable, on_open_attack_paths: Callable) -> None:
-        self._sections = ft.Column(spacing=0)
+        self._sections = ft.ResponsiveRow(spacing=16, run_spacing=0)
         self._on_open_scanner = on_open_scanner
         self._on_open_attack_paths = on_open_attack_paths
         super().__init__(
-            padding=17,
-            border_radius=ui.RADIUS_PANEL,
-            bgcolor=ui.SURFACE,
-            border=ui.border(),
-            col={"xs": 12, "xl": 3},
+            padding=0,
+            col={"xs": 12, "lg": 6},
             content=ft.Column(
                 [
-                    ft.Text("Operational summary", size=15, weight=ft.FontWeight.W_600, color=ui.TEXT_PRIMARY),
-                    ft.Text("Current environment health", size=10, color=ui.TEXT_MUTED),
+                    ft.Text("Scan activity & context", size=18, weight=ft.FontWeight.W_600, color=ui.TEXT_PRIMARY),
                     ft.Divider(height=1, color=ui.BORDER),
                     self._sections,
                     ft.Row(
                         [
                             _panel_button("Open scanner", on_open_scanner, primary=True),
-                            _panel_button("View attack paths", on_open_attack_paths),
+                            _panel_button("Open correlations", on_open_attack_paths),
                         ],
                         spacing=10,
                     ),
                 ],
                 spacing=10,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             ),
         )
         self.set_loading()
 
     def set_loading(self) -> None:
-        self._sections.controls = [LoadingState("Loading operational context...")]
+        self._sections.controls = [LoadingState("Loading operational context")]
 
     def set_summary(self, summary: OperationalSummary) -> None:
         self._sections.controls = [
@@ -433,11 +415,11 @@ class OperationalSummaryPanel(ft.Container):
         pressure = summary.attack_paths
         if pressure is None or (pressure.high_confidence == 0 and pressure.highest_score == 0):
             return _summary_section(
-                "Attack path pressure",
+                "Potential attack paths",
                 ft.Text("No attack paths generated", size=12, color=ui.TEXT_SECONDARY),
             )
         return _summary_section(
-            "Attack path pressure",
+            "Potential attack paths",
             ft.Text(
                 f"{pressure.high_confidence} high-confidence path{'s' if pressure.high_confidence != 1 else ''}",
                 size=13,
@@ -460,7 +442,7 @@ class OperationalSummaryPanel(ft.Container):
         return _summary_section(
             "Honeypot activity",
             ft.Text(
-                f"{activity.events} events - {activity.source_ips} source IP{'s' if activity.source_ips != 1 else ''}",
+                f"{activity.events} event{'s' if activity.events != 1 else ''} - {activity.source_ips} source IP{'s' if activity.source_ips != 1 else ''}",
                 size=13,
                 weight=ft.FontWeight.W_600,
                 color=ui.TEXT_PRIMARY,

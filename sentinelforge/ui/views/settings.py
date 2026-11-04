@@ -5,11 +5,10 @@ import json
 import shutil
 import sys
 import threading
-from pathlib import Path
 
 import flet as ft
 
-from ...core import config, db, net
+from ...core import config, db, events, jobs, net
 from ...modules.analysis import source_quality
 from ...modules.honeypot import personas
 from ...modules.scanner import nikto
@@ -31,19 +30,19 @@ def _tool_status() -> ft.Control:
     )
     return ft.Container(
         padding=12,
-        border_radius=8,
-        bgcolor=ui.PANEL,
-        border=ui.border(),
+        border=ft.Border(top=ft.BorderSide(1, ui.BORDER)),
         content=ft.Column(
             [
                 ft.Text("Optional tool status", size=14, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                ft.Text(f"Active Python: {sys.executable}", size=10, color=ui.MUTED, selectable=True),
-                ft.Text(f"Nmap: {nmap}", size=11, color=ui.MUTED),
-                ft.Text(f"Nikto: {nikto_status} (optional web audit engine; disabled by default)", size=11, color=ui.MUTED),
-                ft.Text(f"TShark/Wireshark CLI: {tshark}", size=11, color=ui.MUTED),
-                ft.Text(f"httpx: {httpx}", size=11, color=ui.MUTED),
-                ft.Text(f"Scapy: {scapy}", size=11, color=ui.MUTED),
-                ft.Text(f"PyShark: {pyshark} ({pyshark_runtime})", size=11, color=ui.MUTED),
+                ft.Text(f"Active Python: {sys.executable}", size=12, color=ui.MUTED, selectable=True),
+                ft.Text(f"Nmap: {nmap}", size=12, color=ui.MUTED),
+                ft.Text(
+                    f"Nikto: {nikto_status} (optional web audit engine; disabled by default)", size=12, color=ui.MUTED
+                ),
+                ft.Text(f"TShark/Wireshark CLI: {tshark}", size=12, color=ui.MUTED),
+                ft.Text(f"httpx: {httpx}", size=12, color=ui.MUTED),
+                ft.Text(f"Scapy: {scapy}", size=12, color=ui.MUTED),
+                ft.Text(f"PyShark: {pyshark} ({pyshark_runtime})", size=12, color=ui.MUTED),
             ],
             spacing=4,
         ),
@@ -94,9 +93,13 @@ def _vulnerability_import_help_panel() -> ft.Control:
         controls.extend(
             [
                 ft.Text(str(meta.get("label") or key), size=12, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                ft.Text(f"Path: {meta.get('path', '-')}", size=10, color=ui.MUTED, selectable=True),
-                ft.Text("Minimum: " + ", ".join(str(item) for item in minimum), size=10, color=ui.MUTED, selectable=True),
-                ft.Text("Examples: " + " | ".join(str(item) for item in rows[:2]), size=10, color=ui.MUTED, selectable=True),
+                ft.Text(f"Path: {meta.get('path', '-')}", size=12, color=ui.MUTED, selectable=True),
+                ft.Text(
+                    "Minimum: " + ", ".join(str(item) for item in minimum), size=12, color=ui.MUTED, selectable=True
+                ),
+                ft.Text(
+                    "Examples: " + " | ".join(str(item) for item in rows[:2]), size=12, color=ui.MUTED, selectable=True
+                ),
             ]
         )
     return ft.Container(
@@ -114,14 +117,14 @@ def _source_status_panel() -> ft.Control:
         counts = db.vulnerability_record_counts()
     except Exception as exc:
         return ui.panel(
-            ft.Text(f"Vulnerability source status unavailable: {exc}", size=11, color=ui.WARN, selectable=True),
+            ft.Text(f"Vulnerability source status unavailable: {exc}", size=12, color=ui.WARN, selectable=True),
             padding=12,
         )
     rows: list[ft.Control] = [
         ft.Text("Vulnerability sources", size=14, weight=ft.FontWeight.BOLD, color=ui.TEXT),
     ]
     if not sources:
-        rows.append(ft.Text("No sources initialized yet.", size=11, color=ui.MUTED))
+        rows.append(ft.Text("No sources initialized yet", size=12, color=ui.MUTED))
     for source in sources:
         rows.append(
             ft.Container(
@@ -134,13 +137,17 @@ def _source_status_panel() -> ft.Control:
                         ft.Row(
                             [
                                 ft.Text(source["name"], size=12, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                                ft.Text(source["status"] or "-", size=11, color=ui.ACCENT if source["last_success_ts"] else ui.WARN),
+                                ft.Text(
+                                    source["status"] or "-",
+                                    size=12,
+                                    color=ui.ACCENT if source["last_success_ts"] else ui.WARN,
+                                ),
                             ],
                             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         ),
                         ft.Text(
                             f"Records: {source['record_count']}  Last success: {source['last_success_ts'] or '-'}",
-                            size=10,
+                            size=12,
                             color=ui.WARN if source.get("stale") else ui.MUTED,
                         ),
                         ft.Text(
@@ -148,27 +155,31 @@ def _source_status_panel() -> ft.Control:
                             f"Progress: {float(source['sync_progress'] or 0) * 100:.0f}%  "
                             f"Attempts: {source['sync_attempts'] or 0}  "
                             f"Next retry: {source['next_retry_ts'] or '-'}",
-                            size=10,
+                            size=12,
                             color=ui.MUTED,
                             selectable=True,
                         ),
                         ft.Text(
                             "Freshness: "
-                            + ("never synced" if source.get("age_hours") is None else f"{source['age_hours']:.1f} hours old")
+                            + (
+                                "never synced"
+                                if source.get("age_hours") is None
+                                else f"{source['age_hours']:.1f} hours old"
+                            )
                             + (" (stale)" if source.get("stale") else ""),
-                            size=10,
+                            size=12,
                             color=ui.WARN if source.get("stale") else ui.MUTED,
                         ),
                         ft.Text(
                             f"Quality: {float(source.get('quality_score', 0)):.2f}  "
                             f"Reasons: {', '.join(source.get('quality_reasons') or [])}",
-                            size=10,
+                            size=12,
                             color=ui.MUTED,
                             selectable=True,
                         ),
                         ft.Text(
                             f"Version: {source['source_version'] or '-'}  Error: {source['last_error'] or '-'}",
-                            size=10,
+                            size=12,
                             color=ui.MUTED,
                             selectable=True,
                         ),
@@ -179,9 +190,8 @@ def _source_status_panel() -> ft.Control:
         )
     rows.append(
         ft.Text(
-            "Local cache counts: "
-            + ", ".join(f"{key}={value}" for key, value in sorted(counts.items())),
-            size=10,
+            "Local cache counts: " + ", ".join(f"{key}={value}" for key, value in sorted(counts.items())),
+            size=12,
             color=ui.MUTED,
             selectable=True,
         )
@@ -195,34 +205,24 @@ def _cycle_button(label: str, values: list[str], state: dict, key: str, width: i
         idx = values.index(current) if current in values else 0
         state[key] = values[(idx + 1) % len(values)]
         e.control.content.controls[1].value = state[key]
+        e.control.tooltip = f"{label}: {state[key]}"
         if on_change:
             on_change(state[key])
         e.control.update()
 
-    def _hover(e):
-        e.control.bgcolor = "#3b2f72" if e.data == "true" else ui.PANEL_SELECTED
-        e.control.scale = 1.018 if e.data == "true" else 1
-        e.control.shadow = ui.SHADOW_SOFT if e.data == "true" else None
-        e.control.update()
-
-    return ft.Container(
+    return ft.Button(
         width=width,
-        height=42,
-        padding=ft.Padding(left=12, top=0, right=12, bottom=0),
-        border_radius=8,
-        bgcolor=ui.PANEL_SELECTED,
-        border=ui.border(ui.ACCENT),
-        animate=ui.MOTION_FAST,
-        animate_scale=ui.MOTION_FAST,
-        ink=True,
-        ink_color="#6d28d99f",
-        on_hover=_hover,
+        height=ui.CONTROL_HEIGHT,
+        elevation=0,
+        style=ui.button_style(),
+        tooltip=f"{label}: {state[key]}",
         on_click=_click,
         content=ft.Row(
             [
-                ft.Text(label, size=12, color=ui.MUTED),
-                ft.Text(state[key], size=13, weight=ft.FontWeight.BOLD, color=ui.TEXT),
+                ft.Text(label, size=ui.TEXT_BODY, color=ui.MUTED),
+                ft.Text(state[key], size=ui.TEXT_BODY, weight=ft.FontWeight.BOLD, color=ui.TEXT),
             ],
+            spacing=12,
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         ),
     )
@@ -243,7 +243,9 @@ def render(page: ft.Page) -> ft.Control:
         "udp_light_enabled": "on" if scanner.get("udp_light_enabled", False) else "off",
         "vulnerability_check_default": "on" if scanner.get("vulnerability_check_default", False) else "off",
         "seed_demo_cache_on_scan": "on" if scanner.get("seed_demo_cache_on_scan", True) else "off",
-        "include_unknown_version_candidates": "on" if scanner.get("include_unknown_version_candidates", False) else "off",
+        "include_unknown_version_candidates": "on"
+        if scanner.get("include_unknown_version_candidates", False)
+        else "off",
         "block_public_targets": "on" if scanner.get("block_public_targets", True) else "off",
         "block_private_targets": "on" if scanner.get("block_private_targets", False) else "off",
         "http_client": recon.get("http_client", "auto"),
@@ -259,7 +261,9 @@ def render(page: ft.Page) -> ft.Control:
         "proxy_scheme": net.normalize_proxy_scheme(network.get("proxy_scheme", "http")),
     }
 
-    default_ports = ft.TextField(label="Default scanner ports", value=scanner["default_ports"], width=620, dense=True, **ui.input_kwargs())
+    default_ports = ft.TextField(
+        label="Default scanner ports", value=scanner["default_ports"], width=620, dense=True, **ui.input_kwargs()
+    )
     nmap_extra_flags = ft.TextField(
         label="Nmap extra flags",
         hint_text="Example: -T3 --top-ports 1000 --reason",
@@ -269,8 +273,8 @@ def render(page: ft.Page) -> ft.Control:
         **ui.input_kwargs(),
     )
     nmap_hint = ft.Text(
-        "Applied only when engine is auto/nmap. SentinelForge filters conflicting -o*, -p, and input-file flags.",
-        size=10,
+        "Applies to auto/nmap; conflicting -o*, -p, and input-file flags are filtered",
+        size=12,
         color=ui.MUTED,
         selectable=True,
     )
@@ -305,12 +309,14 @@ def render(page: ft.Page) -> ft.Control:
         **ui.input_kwargs(),
     )
     nikto_hint = ft.Text(
-        "Nikto runs only after a web service is found. Results are imported as low-confidence web-audit evidence.",
-        size=10,
+        "Nikto checks discovered web services; its results remain low-confidence web-audit evidence",
+        size=12,
         color=ui.MUTED,
         selectable=True,
     )
-    timeout = ft.TextField(label="Scanner timeout seconds", value=str(scanner["timeout_sec"]), width=190, dense=True, **ui.input_kwargs())
+    timeout = ft.TextField(
+        label="Scanner timeout seconds", value=str(scanner["timeout_sec"]), width=190, dense=True, **ui.input_kwargs()
+    )
     target_allowlist = ft.TextField(
         label="Scanner target allowlist, comma-separated wildcards",
         value=", ".join(scanner.get("target_allowlist", [])),
@@ -325,7 +331,9 @@ def render(page: ft.Page) -> ft.Control:
         dense=True,
         **ui.input_kwargs(),
     )
-    max_threads = ft.TextField(label="Scanner max threads", value=str(scanner["max_threads"]), width=190, dense=True, **ui.input_kwargs())
+    max_threads = ft.TextField(
+        label="Scanner max threads", value=str(scanner["max_threads"]), width=190, dense=True, **ui.input_kwargs()
+    )
     low_rate_max_threads = ft.TextField(
         label="Low-rate max threads",
         value=str(scanner.get("low_rate_max_threads", 25)),
@@ -389,19 +397,85 @@ def render(page: ft.Page) -> ft.Control:
         dense=True,
         **ui.input_kwargs(),
     )
-    resolvers = ft.TextField(label="DNS resolvers, comma-separated", value=", ".join(recon.get("resolvers", [])), width=420, dense=True, **ui.input_kwargs())
-    user_agent = ft.TextField(label="Recon User-Agent", value=recon.get("user_agent", ""), width=620, dense=True, **ui.input_kwargs())
-    wordlist_path = ft.TextField(label="Subdomain wordlist path", value=recon.get("wordlist_path", ""), width=620, dense=True, **ui.input_kwargs())
-    wordlist_limit = ft.TextField(label="Wordlist max entries", value=str(recon.get("wordlist_limit", 2000)), width=190, dense=True, **ui.input_kwargs())
-    source_timeout = ft.TextField(label="Recon source timeout seconds", value=str(recon.get("source_timeout_sec", 20)), width=230, dense=True, **ui.input_kwargs())
-    endpoint_timeout = ft.TextField(label="Safe endpoint timeout seconds", value=str(recon.get("safe_endpoint_timeout_sec", 5)), width=230, dense=True, **ui.input_kwargs())
-    export_dir = ft.TextField(label="Recon export directory", value=recon.get("export_dir", ""), width=620, dense=True, **ui.input_kwargs())
-    html_path = ft.TextField(label="HTTP custom .html path", value=honeypot.get("http_html_path", ""), width=420, dense=True, **ui.input_kwargs())
-    cert_path = ft.TextField(label="TLS certificate path", value=honeypot.get("http_tls_cert_path", ""), width=420, dense=True, **ui.input_kwargs())
-    key_path = ft.TextField(label="TLS private key path", value=honeypot.get("http_tls_key_path", ""), width=420, dense=True, **ui.input_kwargs())
-    server_header = ft.TextField(label="HTTP Server header", value=honeypot.get("http_server_header", ""), width=420, dense=True, **ui.input_kwargs())
-    http_status = ft.TextField(label="HTTP status", value=honeypot.get("http_status", "200 OK"), width=190, dense=True, **ui.input_kwargs())
-    http_content_type = ft.TextField(label="HTTP Content-Type", value=honeypot.get("http_content_type", "text/html; charset=utf-8"), width=270, dense=True, **ui.input_kwargs())
+    resolvers = ft.TextField(
+        label="DNS resolvers, comma-separated",
+        value=", ".join(recon.get("resolvers", [])),
+        width=420,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    user_agent = ft.TextField(
+        label="Recon User-Agent", value=recon.get("user_agent", ""), width=620, dense=True, **ui.input_kwargs()
+    )
+    wordlist_path = ft.TextField(
+        label="Subdomain wordlist path",
+        value=recon.get("wordlist_path", ""),
+        width=620,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    wordlist_limit = ft.TextField(
+        label="Wordlist max entries",
+        value=str(recon.get("wordlist_limit", 2000)),
+        width=190,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    source_timeout = ft.TextField(
+        label="Recon source timeout seconds",
+        value=str(recon.get("source_timeout_sec", 20)),
+        width=230,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    endpoint_timeout = ft.TextField(
+        label="Safe endpoint timeout seconds",
+        value=str(recon.get("safe_endpoint_timeout_sec", 5)),
+        width=230,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    export_dir = ft.TextField(
+        label="Recon export directory", value=recon.get("export_dir", ""), width=620, dense=True, **ui.input_kwargs()
+    )
+    html_path = ft.TextField(
+        label="HTTP custom .html path",
+        value=honeypot.get("http_html_path", ""),
+        width=420,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    cert_path = ft.TextField(
+        label="TLS certificate path",
+        value=honeypot.get("http_tls_cert_path", ""),
+        width=420,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    key_path = ft.TextField(
+        label="TLS private key path",
+        value=honeypot.get("http_tls_key_path", ""),
+        width=420,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    server_header = ft.TextField(
+        label="HTTP Server header",
+        value=honeypot.get("http_server_header", ""),
+        width=420,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    http_status = ft.TextField(
+        label="HTTP status", value=honeypot.get("http_status", "200 OK"), width=190, dense=True, **ui.input_kwargs()
+    )
+    http_content_type = ft.TextField(
+        label="HTTP Content-Type",
+        value=honeypot.get("http_content_type", "text/html; charset=utf-8"),
+        width=270,
+        dense=True,
+        **ui.input_kwargs(),
+    )
     http_extra_headers = ft.TextField(
         label="HTTP extra headers JSON",
         value=json.dumps(honeypot.get("http_extra_headers", {}), ensure_ascii=False),
@@ -419,14 +493,38 @@ def render(page: ft.Page) -> ft.Control:
         dense=True,
         **ui.input_kwargs(),
     )
-    ssh_banner = ft.TextField(label="SSH banner", value=honeypot.get("ssh_banner", ""), width=420, dense=True, **ui.input_kwargs())
-    ftp_banner = ft.TextField(label="FTP banner", value=honeypot.get("ftp_banner", ""), width=420, dense=True, **ui.input_kwargs())
-    ftp_user = ft.TextField(label="FTP USER reply", value=honeypot.get("ftp_user_reply", ""), width=420, dense=True, **ui.input_kwargs())
-    ftp_pass = ft.TextField(label="FTP PASS reply", value=honeypot.get("ftp_pass_reply", ""), width=420, dense=True, **ui.input_kwargs())
-    telnet_banner = ft.TextField(label="Telnet banner", value=honeypot.get("telnet_banner", ""), width=420, dense=True, **ui.input_kwargs())
-    telnet_fail = ft.TextField(label="Telnet failure reply", value=honeypot.get("telnet_fail_reply", ""), width=420, dense=True, **ui.input_kwargs())
-    smtp_banner = ft.TextField(label="SMTP banner", value=honeypot.get("smtp_banner", ""), width=420, dense=True, **ui.input_kwargs())
-    smtp_relay = ft.TextField(label="SMTP relay denied reply", value=honeypot.get("smtp_relay_denied", ""), width=420, dense=True, **ui.input_kwargs())
+    ssh_banner = ft.TextField(
+        label="SSH banner", value=honeypot.get("ssh_banner", ""), width=420, dense=True, **ui.input_kwargs()
+    )
+    ftp_banner = ft.TextField(
+        label="FTP banner", value=honeypot.get("ftp_banner", ""), width=420, dense=True, **ui.input_kwargs()
+    )
+    ftp_user = ft.TextField(
+        label="FTP USER reply", value=honeypot.get("ftp_user_reply", ""), width=420, dense=True, **ui.input_kwargs()
+    )
+    ftp_pass = ft.TextField(
+        label="FTP PASS reply", value=honeypot.get("ftp_pass_reply", ""), width=420, dense=True, **ui.input_kwargs()
+    )
+    telnet_banner = ft.TextField(
+        label="Telnet banner", value=honeypot.get("telnet_banner", ""), width=420, dense=True, **ui.input_kwargs()
+    )
+    telnet_fail = ft.TextField(
+        label="Telnet failure reply",
+        value=honeypot.get("telnet_fail_reply", ""),
+        width=420,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    smtp_banner = ft.TextField(
+        label="SMTP banner", value=honeypot.get("smtp_banner", ""), width=420, dense=True, **ui.input_kwargs()
+    )
+    smtp_relay = ft.TextField(
+        label="SMTP relay denied reply",
+        value=honeypot.get("smtp_relay_denied", ""),
+        width=420,
+        dense=True,
+        **ui.input_kwargs(),
+    )
     login_paths = ft.TextField(
         label="HTTP fake login paths, comma-separated",
         value=", ".join(honeypot.get("http_login_paths", [])),
@@ -465,13 +563,37 @@ def render(page: ft.Page) -> ft.Control:
         dense=True,
         **ui.input_kwargs(),
     )
-    http_proxy = ft.TextField(label="HTTP proxy", value=network.get("http_proxy", ""), width=420, dense=True, **ui.input_kwargs())
-    https_proxy = ft.TextField(label="HTTPS proxy", value=network.get("https_proxy", ""), width=420, dense=True, **ui.input_kwargs())
-    proxy_list_path = ft.TextField(label="Proxy list .txt path", value=network.get("proxy_list_path", ""), width=620, dense=True, **ui.input_kwargs())
-    no_proxy = ft.TextField(label="No proxy hosts", value=network.get("no_proxy", ""), width=420, dense=True, **ui.input_kwargs())
-    honeypot_max_events = ft.TextField(label="Keep honeypot events", value=str(retention.get("honeypot_max_events", 50000)), width=210, dense=True, **ui.input_kwargs())
-    scan_history_max_runs = ft.TextField(label="Keep scan runs", value=str(retention.get("scan_history_max_runs", 5000)), width=190, dense=True, **ui.input_kwargs())
-    cleanup_status = ft.Text("", size=11, color=ui.MUTED, selectable=True)
+    http_proxy = ft.TextField(
+        label="HTTP proxy", value=network.get("http_proxy", ""), width=420, dense=True, **ui.input_kwargs()
+    )
+    https_proxy = ft.TextField(
+        label="HTTPS proxy", value=network.get("https_proxy", ""), width=420, dense=True, **ui.input_kwargs()
+    )
+    proxy_list_path = ft.TextField(
+        label="Proxy list .txt path",
+        value=network.get("proxy_list_path", ""),
+        width=620,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    no_proxy = ft.TextField(
+        label="No proxy hosts", value=network.get("no_proxy", ""), width=420, dense=True, **ui.input_kwargs()
+    )
+    honeypot_max_events = ft.TextField(
+        label="Keep honeypot events",
+        value=str(retention.get("honeypot_max_events", 50000)),
+        width=210,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    scan_history_max_runs = ft.TextField(
+        label="Keep scan runs",
+        value=str(retention.get("scan_history_max_runs", 5000)),
+        width=190,
+        dense=True,
+        **ui.input_kwargs(),
+    )
+    cleanup_status = ft.Text("", size=12, color=ui.MUTED, selectable=True)
     persona_select = ft.Dropdown(
         label="Honeypot persona",
         value=state["persona"] if state["persona"] in personas.PRESETS else "apache_ubuntu",
@@ -480,12 +602,13 @@ def render(page: ft.Page) -> ft.Control:
         options=[ft.dropdown.Option(key=key, text=label) for key, label in personas.preset_options()],
         **ui.dropdown_kwargs(),
     )
-    persona_summary = ft.Text(size=11, color=ui.MUTED, selectable=True)
+    persona_summary = ft.Text(size=12, color=ui.MUTED, selectable=True)
     source_mount = ft.Column([_source_status_panel()])
-    sync_status = ft.Text("", size=11, color=ui.MUTED, selectable=True)
-    sync_state = {"running": False}
+    sync_status = ft.Text("", size=12, color=ui.MUTED, selectable=True)
+    sync_view_lock = threading.RLock()
+    sync_view_disposed = False
 
-    def _refresh_engine_settings(_value: str | None = None) -> None:
+    def _refresh_engine_settings(_value: str | None = None, *, update: bool = True) -> None:
         show_nmap = state.get("engine") in {"auto", "nmap"}
         nmap_extra_flags.visible = show_nmap
         nmap_hint.visible = show_nmap
@@ -495,12 +618,10 @@ def render(page: ft.Page) -> ft.Control:
         nikto_tuning.visible = show_nikto
         nikto_max_findings.visible = show_nikto
         nikto_hint.visible = show_nikto
-        try:
+        if update:
             page.update()
-        except Exception:
-            pass
 
-    _refresh_engine_settings(state["engine"])
+    _refresh_engine_settings(state["engine"], update=False)
 
     def _fill_persona_fields(key: str) -> None:
         preset = personas.get_preset(key)
@@ -547,8 +668,12 @@ def render(page: ft.Page) -> ft.Control:
             next_cfg["scanner"]["udp_light_enabled"] = state["udp_light_enabled"] == "on"
             next_cfg["scanner"]["vulnerability_check_default"] = state["vulnerability_check_default"] == "on"
             next_cfg["scanner"]["seed_demo_cache_on_scan"] = state["seed_demo_cache_on_scan"] == "on"
-            next_cfg["scanner"]["include_unknown_version_candidates"] = state["include_unknown_version_candidates"] == "on"
-            next_cfg["scanner"]["target_allowlist"] = [item.strip() for item in (target_allowlist.value or "").split(",") if item.strip()]
+            next_cfg["scanner"]["include_unknown_version_candidates"] = (
+                state["include_unknown_version_candidates"] == "on"
+            )
+            next_cfg["scanner"]["target_allowlist"] = [
+                item.strip() for item in (target_allowlist.value or "").split(",") if item.strip()
+            ]
             next_cfg["scanner"]["scope_file_path"] = (scope_file_path.value or "").strip()
             next_cfg["scanner"]["block_public_targets"] = state["block_public_targets"] == "on"
             next_cfg["scanner"]["block_private_targets"] = state["block_private_targets"] == "on"
@@ -682,60 +807,80 @@ def render(page: ft.Page) -> ft.Control:
             ui.notify(page, f"Vulnerability cache refresh failed: {exc}")
 
     def _sync_sources(_):
-        if sync_state["running"]:
-            ui.notify(page, "Source sync is already running")
-            return
-        nvd_path_value = (nvd_json_path.value or "").strip()
-        kev_path_value = (cisa_kev_path.value or "").strip()
-        epss_path_value = (epss_csv_path.value or "").strip()
-        exploitdb_path_value = (exploitdb_csv_path.value or "").strip()
-        vendor_advisory_path_value = (vendor_advisory_json_path.value or "").strip()
-        sync_state["running"] = True
-        sync_status.value = "Source sync running in background..."
-        try:
+        with sync_view_lock:
+            if sync_view_disposed:
+                return
+            paths = {
+                "nvd_json_path": (nvd_json_path.value or "").strip(),
+                "cisa_kev_path": (cisa_kev_path.value or "").strip(),
+                "epss_csv_path": (epss_csv_path.value or "").strip(),
+                "exploitdb_csv_path": (exploitdb_csv_path.value or "").strip(),
+                "vendor_advisory_json_path": (vendor_advisory_json_path.value or "").strip(),
+            }
+            if not sync.start_source_sync(paths):
+                ui.notify(page, "Source sync is already running")
+            _render_sync_status()
             page.update()
-        except Exception:
-            pass
 
-        def _worker() -> None:
-            try:
-                next_cfg = config.load()
-                next_cfg["scanner"]["nvd_json_path"] = nvd_path_value
-                next_cfg["scanner"]["cisa_kev_path"] = kev_path_value
-                next_cfg["scanner"]["epss_csv_path"] = epss_path_value
-                next_cfg["scanner"]["exploitdb_csv_path"] = exploitdb_path_value
-                next_cfg["scanner"]["vendor_advisory_json_path"] = vendor_advisory_path_value
-                config.save(next_cfg)
-                counts = sync.sync_configured_sources()
-                sync_status.value = "Synced sources: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
-            except Exception as exc:
-                sync_status.value = f"Source sync failed: {exc}"
-            finally:
-                sync_state["running"] = False
+    sync_button = ui.action_button("Sync configured sources", "SYNC", _sync_sources, width=220)
+
+    def _render_sync_status() -> bool:
+        job = jobs.get(sync.SOURCE_SYNC_JOB_ID)
+        running = bool(job and job["status"] in {"queued", "running", "cancelling"})
+        sync_button.disabled = running
+        if job:
+            sync_status.value = f"Source sync failed: {job['error']}" if job["status"] == "failed" else job["label"]
+        return running
+
+    async def _refresh_sync_status() -> None:
+        with sync_view_lock:
+            if sync_view_disposed:
+                return
+            running = _render_sync_status()
+            if not running:
                 source_mount.controls = [_source_status_panel()]
-                try:
-                    page.update()
-                except Exception:
-                    pass
+            page.update()
 
-        threading.Thread(target=_worker, daemon=True).start()
+    def _source_sync_changed(payload: dict) -> None:
+        if payload["job"]["id"] == sync.SOURCE_SYNC_JOB_ID:
+            with sync_view_lock:
+                if not sync_view_disposed:
+                    page.run_task(_refresh_sync_status)
 
-    return ft.Column(
+    def _dispose_sync_view() -> None:
+        nonlocal sync_view_disposed
+        with sync_view_lock:
+            sync_view_disposed = True
+            unsubscribe_sync()
+
+    settings_form = ft.Column(
         [
-            ft.Text("Settings", size=18, weight=ft.FontWeight.BOLD, color=ui.TEXT),
             ft.Container(
                 padding=14,
-                border_radius=8,
-                bgcolor=ui.PANEL,
-                border=ui.border(),
+                border=ft.Border(top=ft.BorderSide(1, ui.BORDER)),
                 content=ft.Column(
                     [
                         ft.Text("Scanner", size=15, weight=ft.FontWeight.BOLD, color=ui.TEXT),
                         ft.Row(
                             [
-                                _cycle_button("Engine", ["auto", "socket", "nmap"], state, "engine", on_change=_refresh_engine_settings),
-                                _cycle_button("Nikto", ["off", "on"], state, "nikto_enabled", width=140, on_change=_refresh_engine_settings),
-                                _cycle_button("Host probe", ["auto", "off", "scapy", "tcp"], state, "host_probe", width=180),
+                                _cycle_button(
+                                    "Engine",
+                                    ["auto", "socket", "nmap"],
+                                    state,
+                                    "engine",
+                                    on_change=_refresh_engine_settings,
+                                ),
+                                _cycle_button(
+                                    "Nikto",
+                                    ["off", "on"],
+                                    state,
+                                    "nikto_enabled",
+                                    width=140,
+                                    on_change=_refresh_engine_settings,
+                                ),
+                                _cycle_button(
+                                    "Host probe", ["auto", "off", "scapy", "tcp"], state, "host_probe", width=180
+                                ),
                                 timeout,
                                 max_threads,
                                 low_rate_max_threads,
@@ -753,7 +898,9 @@ def render(page: ft.Page) -> ft.Control:
                         ft.Row(
                             [
                                 _cycle_button("Block public", ["on", "off"], state, "block_public_targets", width=170),
-                                _cycle_button("Block private", ["off", "on"], state, "block_private_targets", width=170),
+                                _cycle_button(
+                                    "Block private", ["off", "on"], state, "block_private_targets", width=170
+                                ),
                             ],
                             spacing=10,
                             wrap=True,
@@ -764,10 +911,20 @@ def render(page: ft.Page) -> ft.Control:
                         ft.Text("CVE exposure assessment", size=13, weight=ft.FontWeight.BOLD, color=ui.TEXT),
                         ft.Row(
                             [
-                                _cycle_button("Default CVE mode", ["off", "on"], state, "vulnerability_check_default", width=190),
+                                _cycle_button(
+                                    "Default CVE mode", ["off", "on"], state, "vulnerability_check_default", width=190
+                                ),
                                 _cycle_button("UDP light", ["off", "on"], state, "udp_light_enabled", width=150),
-                                _cycle_button("Seed demo cache", ["on", "off"], state, "seed_demo_cache_on_scan", width=180),
-                                _cycle_button("Unknown versions", ["off", "on"], state, "include_unknown_version_candidates", width=190),
+                                _cycle_button(
+                                    "Seed demo cache", ["on", "off"], state, "seed_demo_cache_on_scan", width=180
+                                ),
+                                _cycle_button(
+                                    "Unknown versions",
+                                    ["off", "on"],
+                                    state,
+                                    "include_unknown_version_candidates",
+                                    width=190,
+                                ),
                                 min_candidate_conf,
                                 max_vuln_matches,
                                 sync_interval,
@@ -777,11 +934,13 @@ def render(page: ft.Page) -> ft.Control:
                         ),
                         ft.Row(
                             [
-                                ui.action_button("Refresh vulnerability cache", "REFRESH", _refresh_vuln_cache, width=190),
-                                ui.action_button("Sync configured sources", "SYNC", _sync_sources, width=170),
+                                ui.action_button(
+                                    "Refresh vulnerability cache", "REFRESH", _refresh_vuln_cache, width=236
+                                ),
+                                sync_button,
                                 ft.Text(
-                                    "Current source sync is offline/local. External NVD/KEV/EPSS import can be added on top of this cache.",
-                                    size=11,
+                                    "Sync uses the paths above; Save settings keeps them for later runs",
+                                    size=12,
                                     color=ui.MUTED,
                                 ),
                             ],
@@ -802,20 +961,26 @@ def render(page: ft.Page) -> ft.Control:
             ),
             ft.Container(
                 padding=14,
-                border_radius=8,
-                bgcolor=ui.PANEL,
-                border=ui.border(),
+                border=ft.Border(top=ft.BorderSide(1, ui.BORDER)),
                 content=ft.Column(
                     [
                         ft.Text("Recon", size=15, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                        ft.Row([_cycle_button("HTTP client", ["auto", "urllib", "httpx"], state, "http_client"), resolvers], spacing=10),
+                        ft.Row(
+                            [
+                                _cycle_button("HTTP client", ["auto", "urllib", "httpx"], state, "http_client"),
+                                resolvers,
+                            ],
+                            spacing=10,
+                        ),
                         ft.Row(
                             [
                                 _cycle_button("crt.sh", ["on", "off"], state, "src_crtsh", width=120),
                                 _cycle_button("HackerTarget", ["on", "off"], state, "src_hackertarget", width=160),
                                 _cycle_button("DNSDumpster", ["on", "off"], state, "src_dnsdumpster", width=160),
                                 _cycle_button("Wordlist", ["off", "on"], state, "wordlist_enabled", width=140),
-                                _cycle_button("Safe endpoints", ["on", "off"], state, "safe_endpoint_checks", width=180),
+                                _cycle_button(
+                                    "Safe endpoints", ["on", "off"], state, "safe_endpoint_checks", width=180
+                                ),
                                 wordlist_limit,
                                 source_timeout,
                                 endpoint_timeout,
@@ -832,13 +997,21 @@ def render(page: ft.Page) -> ft.Control:
             ),
             ft.Container(
                 padding=14,
-                border_radius=8,
-                bgcolor=ui.PANEL,
-                border=ui.border(),
+                border=ft.Border(top=ft.BorderSide(1, ui.BORDER)),
                 content=ft.Column(
                     [
                         ft.Text("Advanced honeypot", size=15, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                        ft.Row([persona_select, ft.Text("Presets fill the fields below; edit after selecting if needed.", size=11, color=ui.MUTED)], spacing=10),
+                        ft.Row(
+                            [
+                                persona_select,
+                                ft.Text(
+                                    "Presets fill the fields below; you can edit them before saving",
+                                    size=12,
+                                    color=ui.MUTED,
+                                ),
+                            ],
+                            spacing=10,
+                        ),
                         persona_summary,
                         ft.Row([html_path, server_header], spacing=10),
                         ft.Row([http_status, http_content_type], spacing=10),
@@ -878,16 +1051,31 @@ def render(page: ft.Page) -> ft.Control:
             ),
             ft.Container(
                 padding=14,
-                border_radius=8,
-                bgcolor=ui.PANEL,
-                border=ui.border(),
+                border=ft.Border(top=ft.BorderSide(1, ui.BORDER)),
                 content=ft.Column(
                     [
                         ft.Text("Proxy", size=15, weight=ft.FontWeight.BOLD, color=ui.TEXT),
                         _cycle_button("Proxy", ["off", "on"], state, "use_proxy", width=130),
                         ft.Row([http_proxy, https_proxy], spacing=10),
-                        ft.Row([proxy_list_path, _cycle_button("Proxy scheme", ["http", "https", "socks4", "socks5"], state, "proxy_scheme", width=190)], spacing=10, wrap=True),
-                        ft.Text("Proxy list format: ip:port or ip:port:login:password. List entries are used before single proxy fields.", size=11, color=ui.MUTED),
+                        ft.Row(
+                            [
+                                proxy_list_path,
+                                _cycle_button(
+                                    "Proxy scheme",
+                                    ["http", "https", "socks4", "socks5"],
+                                    state,
+                                    "proxy_scheme",
+                                    width=190,
+                                ),
+                            ],
+                            spacing=10,
+                            wrap=True,
+                        ),
+                        ft.Text(
+                            "Proxy list: ip:port or ip:port:login:password; list entries take priority over single proxy fields",
+                            size=12,
+                            color=ui.MUTED,
+                        ),
                         no_proxy,
                     ],
                     spacing=10,
@@ -896,21 +1084,133 @@ def render(page: ft.Page) -> ft.Control:
             _tool_status(),
             ft.Container(
                 padding=14,
-                border_radius=8,
-                bgcolor=ui.PANEL,
-                border=ui.border(),
+                border=ft.Border(top=ft.BorderSide(1, ui.BORDER)),
                 content=ft.Column(
                     [
                         ft.Text("Retention", size=15, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                        ft.Row([honeypot_max_events, scan_history_max_runs, ui.action_button("Run cleanup", "CLEAN", _run_cleanup, width=130)], spacing=10, wrap=True),
+                        ft.Row(
+                            [
+                                honeypot_max_events,
+                                scan_history_max_runs,
+                                ui.action_button("Run cleanup", "CLEAN", _run_cleanup, width=130),
+                            ],
+                            spacing=10,
+                            wrap=True,
+                        ),
                         cleanup_status,
                     ],
                     spacing=10,
                 ),
             ),
-            ui.action_button("Save settings", "SAVE", _save, width=150),
         ],
         expand=True,
         spacing=14,
         scroll=ft.ScrollMode.AUTO,
+    )
+
+    navigation = ft.Column(spacing=4, scroll=ft.ScrollMode.AUTO, expand=True)
+
+    def wrap_fields(control):
+        if isinstance(control, ft.Row) and any(isinstance(c, (ft.TextField, ft.Dropdown)) for c in control.controls):
+            control.wrap = True
+        for child in getattr(control, "controls", []):
+            wrap_fields(child)
+        if isinstance(control, ft.Container) and control.content is not None:
+            wrap_fields(control.content)
+
+    wrap_fields(settings_form)
+
+    def labels(control):
+        values = []
+        if isinstance(control, ft.Text):
+            values.append(control.value or "")
+        if isinstance(control, (ft.TextField, ft.Dropdown)):
+            values.append(control.label or "")
+        for child in getattr(control, "controls", []):
+            values.extend(labels(child))
+        child = getattr(control, "content", None)
+        if isinstance(child, ft.Control):
+            values.extend(labels(child))
+        return values
+
+    def open_section(key=None):
+        search.value = ""
+        no_matches.visible = False
+        for section in settings_form.controls:
+            section.visible = key is None or section.key == key
+        page.update()
+        page.run_task(settings_form.scroll_to, offset=0, duration=0)
+
+    navigation.controls.append(
+        ft.Button(
+            content="All settings",
+            height=44,
+            on_click=lambda _e: open_section(),
+            style=ui.button_style(background=ui.BACKGROUND, outlined=False),
+        )
+    )
+
+    for index, section in enumerate(settings_form.controls):
+        section.key = f"settings-section-{index}"
+        title = next(iter(labels(section)), "Settings")
+        navigation.controls.append(
+            ft.Button(
+                content=title,
+                height=44,
+                on_click=lambda _e, key=section.key: open_section(key),
+                style=ui.button_style(background=ui.BACKGROUND, outlined=False),
+            )
+        )
+
+    def filter_sections(event):
+        query = (event.control.value or "").strip().casefold()
+        for section in settings_form.controls:
+            section.visible = not query or query in " ".join(labels(section)).casefold()
+        no_matches.visible = not any(section.visible for section in settings_form.controls)
+        page.update()
+
+    search = ft.TextField(
+        label="Search settings",
+        width=320,
+        dense=True,
+        text_size=14,
+        on_change=filter_sections,
+        **ui.input_kwargs(),
+    )
+    no_matches = ft.Text("No settings match this search", size=14, color=ui.TEXT_MUTED, visible=False)
+    unsubscribe_sync = events.subscribe("jobs", _source_sync_changed)
+    _render_sync_status()
+    page._sf_cleanups = getattr(page, "_sf_cleanups", [])
+    page._sf_cleanups.append(_dispose_sync_view)
+    return ft.Column(
+        [
+            ft.Row(
+                [
+                    ft.Text("Settings", size=22, weight=ft.FontWeight.W_600, color=ui.TEXT),
+                    ft.Container(expand=True),
+                    search,
+                    ui.action_button("Save settings", "SAVE", _save, width=160),
+                ],
+                spacing=16,
+            ),
+            ft.Row(
+                [
+                    ft.Container(
+                        width=200,
+                        content=navigation,
+                        padding=ft.Padding(left=0, top=16, right=16, bottom=0),
+                        border=ft.Border(right=ft.BorderSide(1, ui.BORDER)),
+                    ),
+                    ft.Container(
+                        content=ft.Column([no_matches, settings_form], expand=True),
+                        expand=True,
+                        padding=ft.Padding(left=24, top=0, right=0, bottom=0),
+                    ),
+                ],
+                spacing=0,
+                expand=True,
+            ),
+        ],
+        spacing=24,
+        expand=True,
     )

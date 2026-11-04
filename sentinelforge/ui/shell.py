@@ -1,28 +1,42 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from pathlib import Path
 
 import flet as ft
 
-from ..core import config
+from ..core import config, events, jobs
 from . import theme as ui
+from .workspace import WorkspaceTabs
 
 logger = logging.getLogger(__name__)
-
+ASSETS_DIR = Path(__file__).resolve().parents[1] / "resources"
 VIEWS = [
-    ("dashboard", "Dashboard", "DB", "DB"),
-    ("assets", "Assets", "AS", "AS"),
-    ("findings", "Findings", "FN", "FN"),
-    ("attack_paths", "Attack Paths", "AP", "AP"),
-    ("honeypot", "Honeypot", "HP", "HP"),
+    ("dashboard", "Overview", "DB", "DB"),
     ("scanner", "Scanner", "SC", "SC"),
+    ("findings", "Findings", "FN", "FN"),
+    ("assets", "Assets", "AS", "AS"),
+    ("attack_paths", "Correlations", "AP", "AP"),
+    ("ai_workspace", "AI Workspace", "AI", "AI"),
+    ("honeypot", "Honeypots", "HP", "HP"),
     ("recon", "Recon", "RC", "RC"),
     ("settings", "Settings", "ST", "ST"),
 ]
+_NAV_ICONS = {
+    "dashboard": ft.Icons.HOME_OUTLINED,
+    "scanner": ft.Icons.PLAY_ARROW_OUTLINED,
+    "findings": ft.Icons.BUG_REPORT_OUTLINED,
+    "assets": ft.Icons.LAYERS_OUTLINED,
+    "attack_paths": ft.Icons.ACCOUNT_TREE_OUTLINED,
+    "ai_workspace": ft.Icons.PSYCHOLOGY_OUTLINED,
+    "honeypot": ft.Icons.SHIELD_OUTLINED,
+    "recon": ft.Icons.TRAVEL_EXPLORE,
+    "settings": ft.Icons.SETTINGS_OUTLINED,
+}
 
 
 def _cleanup_view(page: ft.Page) -> None:
+    """Release view listeners and timers without cancelling background jobs"""
     cleanups = getattr(page, "_sf_cleanups", [])
     page._sf_cleanups = []
     for cleanup in cleanups:
@@ -37,300 +51,348 @@ def _view_factory(key: str, page: ft.Page) -> ft.Control:
     return module.render(page)
 
 
-def _sidebar_header(collapsed: bool) -> ft.Control:
-    if collapsed:
-        return ft.Container(
-            height=68,
-            alignment=ft.Alignment(0, 0),
-            border=ft.Border(bottom=ft.BorderSide(1, ui.BORDER)),
-            content=ft.Text("SF", size=13, weight=ft.FontWeight.BOLD, color=ui.BRAND),
-        )
-    return ft.Container(
-        height=68,
-        padding=ft.Padding(left=18, top=13, right=14, bottom=10),
-        border=ft.Border(bottom=ft.BorderSide(1, ui.BORDER)),
-        content=ft.Column(
-            [
-                ft.Row(
-                    [
-                        ft.Text("SF", size=13, weight=ft.FontWeight.BOLD, color=ui.BRAND),
-                        ft.Text("SentinelForge", size=18, weight=ft.FontWeight.BOLD, color=ui.TEXT_PRIMARY),
-                    ],
-                    spacing=16,
-                ),
-                ft.Text("defensive security workspace", size=9, color=ui.TEXT_MUTED),
-            ],
-            spacing=1,
-        ),
-    )
-
-
-def _nav_button(
-    idx: int,
-    *,
-    selected: bool,
-    collapsed: bool,
-    on_click: Callable,
-) -> ft.Control:
-    _key, label, icon, _selected_icon = VIEWS[idx]
-
-    def _hover(event) -> None:
-        if selected:
-            return
-        event.control.bgcolor = ui.SURFACE_SECONDARY if event.data == "true" else None
-        event.control.update()
-
-    controls: list[ft.Control] = [
-        ft.Text(
-            icon,
-            size=10,
-            weight=ft.FontWeight.W_600,
-            color=ui.BRAND if selected else ui.TEXT_MUTED,
-            no_wrap=True,
-        )
-    ]
-    if not collapsed:
-        controls.append(
-            ft.Text(
-                label,
-                size=12,
-                weight=ft.FontWeight.W_600 if selected else ft.FontWeight.NORMAL,
-                color=ui.TEXT_PRIMARY if selected else ui.TEXT_SECONDARY,
-                no_wrap=True,
-            )
-        )
-    return ft.Container(
-        height=42,
-        margin=ft.Margin(left=10, top=0, right=10, bottom=0),
-        padding=ft.Padding(left=16 if not collapsed else 0, top=0, right=10, bottom=0),
-        alignment=ft.Alignment(0 if collapsed else -1, 0),
-        border_radius=8,
-        bgcolor=ui.SURFACE_ACTIVE if selected else None,
-        ink=True,
-        ink_color="#228B7CF6",
-        data=idx,
-        tooltip=label if collapsed else None,
-        on_hover=_hover,
-        on_click=on_click,
-        content=ft.Row(
-            controls,
-            spacing=20,
-            alignment=ft.MainAxisAlignment.CENTER if collapsed else ft.MainAxisAlignment.START,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        ),
-    )
-
-
-def _workspace_selector(collapsed: bool) -> ft.Control:
-    if collapsed:
-        return ft.Container(
-            height=52,
-            margin=10,
-            border_radius=9,
-            bgcolor=ui.SURFACE,
-            border=ui.border(),
-            alignment=ft.Alignment(0, 0),
-            tooltip="Workspace: Local lab",
-            content=ft.Text("LL", size=10, weight=ft.FontWeight.W_600, color=ui.TEXT_SECONDARY),
-        )
-    return ft.Container(
-        padding=ft.Padding(left=12, top=0, right=12, bottom=18),
-        content=ft.Column(
-            [
-                ft.Text("WORKSPACE", size=9, weight=ft.FontWeight.W_600, color=ui.TEXT_MUTED),
-                ft.Container(
-                    height=52,
-                    padding=ft.Padding(left=16, top=0, right=14, bottom=0),
-                    border_radius=9,
-                    bgcolor=ui.SURFACE,
-                    border=ui.border(),
-                    content=ft.Row(
-                        [
-                            ft.Text("Local lab", size=12, color=ui.TEXT_SECONDARY),
-                            ft.Text("v", size=10, color=ui.TEXT_MUTED),
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    ),
-                ),
-            ],
-            spacing=7,
-        ),
-    )
-
-
-def _top_action(label: str, on_click: Callable | None, *, tooltip: str) -> ft.Control:
-    return ft.Container(
-        width=34,
-        height=34,
-        border_radius=8,
-        alignment=ft.Alignment(0, 0),
-        ink=on_click is not None,
-        ink_color="#228B7CF6",
-        on_click=on_click,
-        tooltip=tooltip,
-        content=ft.Text(label, size=14, color=ui.TEXT_SECONDARY if on_click else ui.TEXT_MUTED),
-    )
-
-
-def _new_scan_button(on_click: Callable) -> ft.Control:
-    return ft.Container(
-        width=110,
-        height=38,
-        border_radius=8,
-        bgcolor=ui.BRAND_DARK,
-        border=ui.border(ui.BRAND),
-        alignment=ft.Alignment(0, 0),
-        ink=True,
-        ink_color="#338B7CF6",
-        on_click=on_click,
-        content=ft.Text("New scan", size=11, weight=ft.FontWeight.W_600, color=ui.TEXT_PRIMARY),
-    )
-
-
 def _main(page: ft.Page) -> None:
     config.load()
     page.title = "SentinelForge"
+    page.fonts = {"Inter": "fonts/Inter.ttf"}
     page.theme_mode = ft.ThemeMode.DARK
-    page.bgcolor = ui.BACKGROUND
-    page.padding = 0
-    page.spacing = 0
-    page.window.min_width = 1180
-    page.window.min_height = 680
-    page.window.width = 1600
-    page.window.height = 1000
-
-    state = {"selected": 0, "collapsed": False}
-    nav_items = ft.Column(spacing=4)
+    page.theme = ft.Theme(
+        font_family="Inter",
+        color_scheme_seed=ui.BRAND,
+        text_theme=ft.TextTheme(
+            body_large=ft.TextStyle(size=16),
+            body_medium=ft.TextStyle(size=14),
+            body_small=ft.TextStyle(size=12),
+            label_large=ft.TextStyle(size=14),
+        ),
+    )
+    page.bgcolor, page.padding, page.spacing = ui.BACKGROUND, 0, 0
+    page.window.min_width, page.window.min_height = 1180, 680
+    page.window.width, page.window.height = 1672, 960
+    page.window.title_bar_hidden = True
+    # The shell owns tab keys; each mounted view owns its form state
+    tabs = WorkspaceTabs()
+    state = {"collapsed": False, "palette": None}
     sidebar = ft.Container(
-        width=220,
-        bgcolor=ui.SIDEBAR_BACKGROUND,
-        border=ft.Border(right=ft.BorderSide(1, ui.BORDER)),
+        width=160, bgcolor=ui.SIDEBAR_BACKGROUND, border=ft.Border(right=ft.BorderSide(1, ui.BORDER))
     )
-    content = ft.Container(
-        expand=True,
-        padding=ui.SPACE_PAGE,
-        alignment=ft.Alignment(-1, -1),
-        bgcolor=ui.BACKGROUND,
-    )
-    top_bar = ft.Container(
-        height=64,
-        bgcolor=ui.TOPBAR_BACKGROUND,
-        border=ft.Border(bottom=ft.BorderSide(1, "#101522")),
-        padding=ft.Padding(left=18, top=0, right=18, bottom=0),
-    )
-    workspace = ft.Column([top_bar, content], spacing=0, expand=True)
-    body = ft.Row([sidebar, workspace], expand=True, spacing=0)
+    tab_row = ft.Row(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+    content = ft.Container(expand=True, padding=24, alignment=ft.Alignment(-1, -1), bgcolor=ui.BACKGROUND)
+    task_label = ft.Text("Background tasks: 0", size=12, color=ui.TEXT_SECONDARY)
+    status_label = ft.Text("Ready", size=12, color=ui.TEXT_SECONDARY)
 
-    def _rebuild_sidebar() -> None:
-        collapsed = bool(state["collapsed"])
-        sidebar.width = 72 if collapsed else 220
-        sidebar_toggle.tooltip = "Expand sidebar" if collapsed else "Collapse sidebar"
-        nav_items.controls = [
-            _nav_button(
-                idx,
-                selected=idx == state["selected"],
-                collapsed=collapsed,
-                on_click=_on_nav,
+    def icon_button(icon, tooltip, callback):
+        return ft.IconButton(
+            icon=icon,
+            tooltip=tooltip,
+            width=44,
+            height=44,
+            on_click=callback,
+            style=ui.button_style(background=ui.BACKGROUND, outlined=False, padding=0),
+        )
+
+    def rebuild_sidebar():
+        collapsed = state["collapsed"]
+        sidebar.width = 64 if collapsed else 160
+
+        def destination(index, key, label):
+            selected = key == tabs.active
+            parts = [ft.Icon(_NAV_ICONS[key], size=20, color=ui.TEXT_SECONDARY)]
+            if not collapsed:
+                parts.append(ft.Text(label, size=14, color=ui.TEXT, no_wrap=True))
+            return ft.Container(
+                height=44,
+                margin=ft.Margin(left=6, top=0, right=6, bottom=0),
+                border=ft.Border(left=ft.BorderSide(3, ui.BRAND if selected else ft.Colors.TRANSPARENT)),
+                content=ft.Button(
+                    height=44,
+                    expand=True,
+                    elevation=0,
+                    data=index,
+                    tooltip=label,
+                    on_click=lambda e: navigate(int(e.control.data)),
+                    style=ui.button_style(
+                        background=ui.SURFACE_ACTIVE if selected else ui.SIDEBAR_BACKGROUND, outlined=False, padding=8
+                    ),
+                    content=ft.Row(
+                        parts,
+                        spacing=10,
+                        alignment=ft.MainAxisAlignment.CENTER if collapsed else ft.MainAxisAlignment.START,
+                    ),
+                ),
             )
-            for idx in range(len(VIEWS))
-        ]
+
+        primary, tools = [], []
+        for i, (key, label, *_) in enumerate(VIEWS):
+            (tools if key in {"settings", "honeypot", "recon"} else primary).append(destination(i, key, label))
         sidebar.content = ft.Column(
             [
-                _sidebar_header(collapsed),
-                ft.Container(padding=ft.Padding(left=0, top=16, right=0, bottom=0), content=nav_items),
+                ft.Container(height=12),
+                *primary,
+                ft.Container(padding=12, content=ft.Divider(height=1, color=ui.BORDER)),
+                *tools,
                 ft.Container(expand=True),
-                _workspace_selector(collapsed),
+                icon_button(
+                    ft.Icons.KEYBOARD_DOUBLE_ARROW_RIGHT if collapsed else ft.Icons.KEYBOARD_DOUBLE_ARROW_LEFT,
+                    "Expand sidebar" if collapsed else "Collapse sidebar",
+                    toggle_sidebar,
+                ),
             ],
-            spacing=0,
+            spacing=4,
             expand=True,
         )
 
-    def _render(idx: int) -> None:
+    def rebuild_tabs():
+        labels = {key: label for key, label, *_ in VIEWS}
+        controls = []
+        for key in tabs.opened:
+            active = key == tabs.active
+            background = ui.SURFACE_ACTIVE if active else ui.BACKGROUND
+            controls.append(
+                ft.Container(
+                    height=44,
+                    bgcolor=background,
+                    border=ft.Border(
+                        bottom=ft.BorderSide(2, ui.BRAND if active else ft.Colors.TRANSPARENT),
+                        right=ft.BorderSide(1, ui.BORDER),
+                    ),
+                    content=ft.Row(
+                        [
+                            ft.Button(
+                                content=labels[key],
+                                height=42,
+                                data=key,
+                                on_click=lambda e: navigate(e.control.data),
+                                style=ui.button_style(background=background, outlined=False, padding=16),
+                            ),
+                            # Capture this tab's key before the next loop iteration
+                            icon_button(ft.Icons.CLOSE, f"Close {labels[key]}", lambda _e, k=key: close_tab(k)),
+                        ],
+                        spacing=0,
+                        tight=True,
+                    ),
+                )
+            )
+        controls.append(icon_button(ft.Icons.ADD, "Open tool (Ctrl+K)", open_palette))
+        tab_row.controls = controls
+
+    def render():
         _cleanup_view(page)
-        key = VIEWS[idx][0]
+        key = tabs.active
         page._sf_current_view = key
         try:
             control = _view_factory(key, page)
-        except Exception as exc:  # pragma: no cover - last-resort UI guard
+        except Exception as exc:
             logger.exception("Failed to render SentinelForge view %s", key)
-            # Release listeners or timers registered before the failed render.
             _cleanup_view(page)
-            control = ft.Container(
-                padding=16,
-                border_radius=ui.RADIUS_CONTROL,
-                bgcolor=ui.CRITICAL_SURFACE,
-                content=ft.Text(
-                    f"Failed to load '{key}': {exc}",
-                    color=ui.TEXT_PRIMARY,
-                    selectable=True,
-                ),
-            )
+            control = ft.Text(f"Failed to load '{key}': {exc}", color=ui.CRITICAL, selectable=True)
         content.content = ft.Container(key=f"view:{key}", content=control, expand=True, bgcolor=ui.BACKGROUND)
+        rebuild_sidebar()
+        rebuild_tabs()
         page.update()
 
-    def _navigate(view: str | int) -> None:
-        if isinstance(view, int):
-            idx = view
+    def navigate(view: str | int):
+        key = VIEWS[max(0, min(view, len(VIEWS) - 1))][0] if isinstance(view, int) else view
+        if key not in {v[0] for v in VIEWS}:
+            key = "dashboard"
+        if key == tabs.active:
+            return
+        tabs.select(key)
+        render()
+
+    def close_tab(key):
+        previous = tabs.active
+        tabs.close(key)
+        if previous != tabs.active or previous == key:
+            render()
         else:
-            idx = next((i for i, item in enumerate(VIEWS) if item[0] == view), 0)
-        state["selected"] = max(0, min(idx, len(VIEWS) - 1))
-        _rebuild_sidebar()
-        _render(int(state["selected"]))
+            rebuild_tabs()
+            page.update()
 
-    def _on_nav(event) -> None:
-        _navigate(int(event.control.data))
-
-    def _toggle_sidebar(_event) -> None:
+    def toggle_sidebar(_event):
         state["collapsed"] = not state["collapsed"]
-        _rebuild_sidebar()
+        rebuild_sidebar()
         page.update()
 
-    def _go_scanner(_event) -> None:
-        _navigate("scanner")
+    def dismiss_palette():
+        dialog = state["palette"]
+        if dialog is not None:
+            # Flet retains the dialog until its native dismissal animation ends
+            page.pop_dialog()
+            state["palette"] = None
 
-    def _go_settings(_event) -> None:
-        _navigate("settings")
+    def open_palette(_event=None):
+        if state["palette"] is not None:
+            return
+        results = ft.Column(spacing=0, height=400, scroll=ft.ScrollMode.AUTO)
 
-    global_search = ft.TextField(
-        hint_text="Search assets, findings, scans...",
-        read_only=True,
-        height=36,
-        dense=True,
-        text_size=11,
-        tooltip="Global search is planned; Dashboard activity search is available below.",
-        **ui.input_kwargs(),
-    )
-    sidebar_toggle = _top_action("☰", _toggle_sidebar, tooltip="Collapse sidebar")
-    top_bar.content = ft.Row(
-        [
-            sidebar_toggle,
-            ft.Container(content=global_search, width=430),
-            ft.Container(expand=True),
-            _new_scan_button(_go_scanner),
-            _top_action("?", None, tooltip="Help is not available yet"),
-            _top_action("⚙", _go_settings, tooltip="Settings"),
-            ft.Container(
-                width=34,
-                height=34,
-                border_radius=17,
-                bgcolor=ui.SURFACE_SECONDARY,
-                alignment=ft.Alignment(0, 0),
-                content=ft.Text("AR", size=9, weight=ft.FontWeight.W_600, color=ui.TEXT_SECONDARY),
+        def choose(key):
+            dismiss_palette()
+            navigate(key)
+
+        def filter_commands(event=None):
+            query = (search.value or "").strip().casefold()
+            results.controls = [
+                ft.Button(
+                    content=f"Open {label}",
+                    icon=_NAV_ICONS[key],
+                    height=44,
+                    on_click=lambda _e, k=key: choose(k),
+                    style=ui.button_style(background=ui.SURFACE, outlined=False),
+                )
+                for key, label, *_ in VIEWS
+                if query in label.casefold()
+            ] or [ft.Text("No matching commands", color=ui.TEXT_MUTED)]
+            if event is not None:
+                page.update()
+
+        search = ft.TextField(
+            label="Search tools",
+            autofocus=True,
+            on_change=filter_commands,
+            on_submit=lambda _e: (
+                results.controls[0].on_click(None) if isinstance(results.controls[0], ft.Button) else None
             ),
-        ],
-        spacing=12,
-        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-    )
+            **ui.input_kwargs(),
+        )
+        filter_commands()
+        dialog = ft.AlertDialog(
+            title=ft.Text("Commands", size=18),
+            bgcolor=ui.SURFACE,
+            shape=ft.RoundedRectangleBorder(radius=8),
+            content=ft.Container(width=500, content=ft.Column([search, results], tight=True)),
+            on_dismiss=lambda _e: state.update(palette=None) if state["palette"] is dialog else None,
+        )
+        state["palette"] = dialog
+        page.show_dialog(dialog)
 
-    page._sf_navigate = _navigate
-    page.on_close = lambda _event: _cleanup_view(page)
-    page.add(body)
-    _rebuild_sidebar()
-    _render(0)
+    def keyboard(event):
+        key = event.key.lower()
+        if key == "escape":
+            dismiss_palette()
+        elif event.ctrl and key == "k":
+            open_palette()
+        elif event.ctrl and key == "w" and state["palette"] is None:
+            close_tab(tabs.active)
+        elif event.ctrl and key == "tab" and state["palette"] is None:
+            tabs.cycle(backwards=event.shift)
+            render()
+
+    def refresh_status(_payload=None):
+        count = len(jobs.list_jobs(include_finished=False))
+        task_label.value = f"Background tasks: {count}"
+        status_label.value = "Working" if count else "Ready"
+        try:
+            task_label.update()
+            status_label.update()
+        except RuntimeError:
+            pass
+
+    unsubscribe = events.subscribe("jobs", refresh_status)
+
+    def close(_event):
+        _cleanup_view(page)
+        unsubscribe()
+
+    def minimize(_event):
+        page.window.minimized = True
+        page.update()
+
+    def maximize(_event):
+        page.window.maximized = not page.window.maximized
+        page.update()
+
+    async def exit_app(_event):
+        close(_event)
+        await page.window.close()
+
+    header = ft.Container(
+        height=58,
+        bgcolor=ui.TOPBAR_BACKGROUND,
+        padding=ft.Padding(left=20, top=0, right=24, bottom=0),
+        border=ft.Border(bottom=ft.BorderSide(1, ui.BORDER)),
+        content=ft.Row(
+            [
+                ft.WindowDragArea(
+                    expand=True,
+                    content=ft.Row(
+                        [
+                            ft.Icon(ft.Icons.SHIELD_OUTLINED, size=28, color=ui.BRAND),
+                            ft.Column(
+                                [
+                                    ft.Text("SentinelForge", size=20, weight=ft.FontWeight.W_600, color=ui.TEXT),
+                                    ft.Text("Evidence-first Security Analysis", size=12, color=ui.TEXT_SECONDARY),
+                                ],
+                                spacing=0,
+                            ),
+                        ],
+                        spacing=16,
+                    ),
+                ),
+                ft.Text("Workspace", size=12, color=ui.TEXT_MUTED),
+                ft.Container(
+                    width=180,
+                    padding=10,
+                    border=ui.border(),
+                    border_radius=6,
+                    tooltip="Local workspace; project isolation is not available yet",
+                    content=ft.Row(
+                        [
+                            ft.Icon(ft.Icons.FOLDER_OUTLINED, size=18, color=ui.TEXT_MUTED),
+                            ft.Text("Local workspace", size=14, color=ui.TEXT_SECONDARY),
+                        ],
+                        spacing=8,
+                    ),
+                ),
+                icon_button(ft.Icons.SEARCH, "Commands (Ctrl+K)", open_palette),
+                icon_button(ft.Icons.REMOVE, "Minimize", minimize),
+                icon_button(ft.Icons.CROP_SQUARE, "Maximize or restore", maximize),
+                icon_button(ft.Icons.CLOSE, "Close SentinelForge", exit_app),
+            ],
+            spacing=12,
+        ),
+    )
+    status_bar = ft.Container(
+        height=34,
+        bgcolor=ui.TOPBAR_BACKGROUND,
+        padding=ft.Padding(left=24, top=0, right=24, bottom=0),
+        border=ft.Border(top=ft.BorderSide(1, ui.BORDER)),
+        content=ft.Row(
+            [
+                ft.Icon(ft.Icons.CIRCLE, size=9, color=ui.SUCCESS_TEAL),
+                status_label,
+                ft.VerticalDivider(width=24, color=ui.BORDER),
+                ft.Text("Local workspace", size=12, color=ui.TEXT_SECONDARY),
+                ft.VerticalDivider(width=24, color=ui.BORDER),
+                task_label,
+                ft.VerticalDivider(width=24, color=ui.BORDER),
+                ft.Icon(ft.Icons.PSYCHOLOGY_OUTLINED, size=18, color=ui.TEXT_MUTED),
+                ft.Text("Local AI: unavailable", size=12, color=ui.TEXT_MUTED),
+                ft.Container(expand=True),
+                ft.Text("SQLite · Local storage", size=12, color=ui.TEXT_MUTED),
+            ],
+            spacing=8,
+        ),
+    )
+    workspace = ft.Column(
+        [
+            ft.Container(height=44, border=ft.Border(bottom=ft.BorderSide(1, ui.BORDER)), content=tab_row),
+            content,
+            status_bar,
+        ],
+        spacing=0,
+        expand=True,
+    )
+    page._sf_navigate, page._sf_tabs, page._sf_close_tab = navigate, tabs, close_tab
+    page._sf_open_palette = open_palette
+    page.on_keyboard_event, page.on_close = keyboard, close
+    page.add(ft.Column([header, ft.Row([sidebar, workspace], spacing=0, expand=True)], spacing=0, expand=True))
+    render()
+    refresh_status()
 
 
 def run() -> None:
-    ft.run(_main, view=ft.AppView.FLET_APP)
+    ft.run(_main, view=ft.AppView.FLET_APP, assets_dir=str(ASSETS_DIR))
 
 
 if __name__ == "__main__":

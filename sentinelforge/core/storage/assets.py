@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import json
+# Explicit aliases preserve existing exports through the storage facade.
+import json as json
 import sqlite3
 
-from .. import config
+from .. import config as config
 from .connection import FINDING_STATUSES, _json_dump, _json_load, _merge_list, cursor, now
+
 
 def upsert_asset(hostname: str, *, ips: list[str] | None = None, source: str = "",
                  tags: list[str] | None = None, open_services: list[dict] | None = None,
@@ -73,9 +75,9 @@ def add_asset_scan_history(asset_id: int, *, scan_run_id: int | None = None,
         )
 
 
-def assets(limit: int = 500) -> list[sqlite3.Row]:
+def assets(limit: int | None = 500) -> list[sqlite3.Row]:
     with cursor() as c:
-        c.execute("SELECT * FROM assets ORDER BY last_seen DESC LIMIT ?", (limit,))
+        c.execute("SELECT * FROM assets ORDER BY last_seen DESC, id DESC LIMIT ?", (-1 if limit is None else limit,))
         return c.fetchall()
 
 
@@ -117,15 +119,18 @@ def asset_scan_history_for_assets(asset_ids: list[int]) -> dict[int, list[sqlite
     ids = sorted({int(asset_id) for asset_id in asset_ids if asset_id})
     if not ids:
         return {}
-    placeholders = ",".join("?" for _ in ids)
     out = {asset_id: [] for asset_id in ids}
     with cursor() as c:
-        c.execute(
-            f"SELECT * FROM asset_scan_history WHERE asset_id IN ({placeholders}) ORDER BY asset_id, id DESC",
-            tuple(ids),
-        )
-        for row in c.fetchall():
-            out.setdefault(int(row["asset_id"]), []).append(row)
+        batch_size = min(500, c.connection.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER))
+        for start in range(0, len(ids), batch_size):
+            batch = ids[start : start + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+            c.execute(
+                f"SELECT * FROM asset_scan_history WHERE asset_id IN ({placeholders}) ORDER BY asset_id, id DESC",
+                tuple(batch),
+            )
+            for row in c.fetchall():
+                out.setdefault(int(row["asset_id"]), []).append(row)
     return out
 
 
@@ -182,7 +187,8 @@ def upsert_finding(*, title: str, severity: str, confidence: str, status: str = 
         return row["id"]
 
 
-def findings(limit: int = 500, status: str | None = None) -> list[sqlite3.Row]:
+def findings(limit: int | None = 500, status: str | None = None) -> list[sqlite3.Row]:
+    limit = -1 if limit is None else limit
     with cursor() as c:
         if status:
             c.execute(
@@ -220,16 +226,19 @@ def vulnerability_matches_for_findings(finding_ids: list[int]) -> dict[int, list
     ids = sorted({int(finding_id) for finding_id in finding_ids if finding_id})
     if not ids:
         return {}
-    placeholders = ",".join("?" for _ in ids)
     out = {finding_id: [] for finding_id in ids}
     with cursor() as c:
-        c.execute(
-            f"SELECT * FROM vulnerability_matches WHERE finding_id IN ({placeholders}) "
-            "ORDER BY finding_id, priority_score DESC, confidence_score DESC",
-            tuple(ids),
-        )
-        for row in c.fetchall():
-            out.setdefault(int(row["finding_id"]), []).append(row)
+        batch_size = min(500, c.connection.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER))
+        for start in range(0, len(ids), batch_size):
+            batch = ids[start : start + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+            c.execute(
+                f"SELECT * FROM vulnerability_matches WHERE finding_id IN ({placeholders}) "
+                "ORDER BY finding_id, priority_score DESC, confidence_score DESC",
+                tuple(batch),
+            )
+            for row in c.fetchall():
+                out.setdefault(int(row["finding_id"]), []).append(row)
     return out
 
 
@@ -313,15 +322,17 @@ def asset_packages_for_assets(asset_ids: list[int]) -> dict[int, list[sqlite3.Ro
     ids = sorted({int(asset_id) for asset_id in asset_ids if asset_id})
     if not ids:
         return {}
-    placeholders = ",".join("?" for _ in ids)
     out = {asset_id: [] for asset_id in ids}
     with cursor() as c:
-        c.execute(
-            f"SELECT * FROM asset_inventory_packages WHERE asset_id IN ({placeholders}) "
-            "ORDER BY asset_id, package_name",
-            tuple(ids),
-        )
-        for row in c.fetchall():
-            out.setdefault(int(row["asset_id"]), []).append(row)
+        batch_size = min(500, c.connection.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER))
+        for start in range(0, len(ids), batch_size):
+            batch = ids[start : start + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+            c.execute(
+                f"SELECT * FROM asset_inventory_packages WHERE asset_id IN ({placeholders}) "
+                "ORDER BY asset_id, package_name",
+                tuple(batch),
+            )
+            for row in c.fetchall():
+                out.setdefault(int(row["asset_id"]), []).append(row)
     return out
-

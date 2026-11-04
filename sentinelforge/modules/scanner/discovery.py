@@ -8,9 +8,9 @@ import ssl
 import subprocess
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import perf_counter
-from typing import Iterable
 
 from ...core.text import decode_network_text
 from .service_ports import HTTP_PORTS, looks_like_https_port
@@ -47,7 +47,7 @@ def _probe(host: str, port: int, timeout: float, server_name: str | None = None)
         else:
             try:
                 banner = decode_network_text(sock.recv(512))
-            except socket.timeout:
+            except TimeoutError:
                 banner = ""
     finally:
         sock.close()
@@ -64,7 +64,7 @@ def _http_probe(sock: socket.socket, *, host: str) -> str:
     while sum(len(c) for c in chunks) < _BANNER_LIMIT:
         try:
             chunk = sock.recv(1024)
-        except socket.timeout:
+        except TimeoutError:
             break
         if not chunk:
             break
@@ -76,7 +76,7 @@ def _line_probe(sock: socket.socket, payload: bytes, timeout: float) -> str:
     initial = b""
     try:
         initial = sock.recv(512)
-    except socket.timeout:
+    except TimeoutError:
         pass
     try:
         sock.sendall(payload)

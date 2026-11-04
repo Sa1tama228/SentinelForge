@@ -53,7 +53,7 @@ def _product_from_version(value: str) -> str:
     text = (value or "").strip()
     if not text:
         return ""
-    token = re.split(r"[\s/]+", text, 1)[0]
+    token = re.split(r"[\s/]+", text, maxsplit=1)[0]
     return token.strip()
 
 

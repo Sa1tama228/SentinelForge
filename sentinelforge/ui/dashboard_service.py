@@ -81,7 +81,7 @@ class DashboardSummary:
 
 
 class DashboardService:
-    """Compose bounded storage queries and existing analyzers for the Dashboard."""
+    """Keep unavailable sources distinct from valid empty results"""
 
     def get_summary(self) -> DashboardSummary:
         errors: dict[str, str] = {}
@@ -118,7 +118,7 @@ class DashboardService:
             path_pressure = None
 
         try:
-            raw_paths = path_data.get("paths", []) if isinstance(path_data, dict) else []
+            raw_paths = path_data.get("paths", [])
             exposed_service = self._top_exposed_service(raw_paths if isinstance(raw_paths, list) else [])
         except Exception:
             logger.exception("Dashboard exposed service query failed")
@@ -161,19 +161,7 @@ class DashboardService:
         return [self._activity_item(row) for row in rows]
 
     def _metrics(self, counts: dict[str, int | float]) -> tuple[DashboardMetric, ...]:
-        severity_score = float(counts.get("severity_score", 0.0) or 0.0)
-        priority_score = float(counts.get("priority_score", 0.0) or 0.0)
-        # This adapter reports the strongest current risk evidence. It deliberately
-        # leaves correlation priority and severity formulas unchanged.
-        risk_score = max(0, min(100, round(max(severity_score, priority_score))))
         review_items = int(counts.get("review_items", 0) or 0)
-        risk_label = self._risk_label(risk_score)
-        if review_items:
-            risk_subtitle = f"{risk_label} - review {review_items} item{'s' if review_items != 1 else ''}"
-        elif risk_score:
-            risk_subtitle = f"{risk_label} current risk evidence"
-        else:
-            risk_subtitle = "No current risk evidence"
         scan_runs = int(counts.get("scan_runs", 0) or 0)
         running_scans = int(counts.get("running_scans", 0) or 0)
         scan_subtitle = (
@@ -182,7 +170,7 @@ class DashboardService:
             else f"{scan_runs} recorded run{'s' if scan_runs != 1 else ''}"
         )
         return (
-            DashboardMetric("Risk posture", f"{risk_score} / 100", risk_subtitle, "critical"),
+            DashboardMetric("Needs review", str(review_items), "Unresolved high severity or priority", "critical"),
             DashboardMetric(
                 "Findings",
                 str(int(counts.get("findings", 0) or 0)),
@@ -203,22 +191,12 @@ class DashboardService:
         return tuple(
             DashboardMetric(title, "-", "Temporarily unavailable", accent, available=False)
             for title, accent in (
-                ("Risk posture", "critical"),
+                ("Needs review", "critical"),
                 ("Findings", "brand"),
                 ("Assets", "info"),
                 ("Active scans", "success"),
             )
         )
-
-    @staticmethod
-    def _risk_label(score: int) -> str:
-        if score >= 90:
-            return "Critical"
-        if score >= 60:
-            return "High"
-        if score >= 35:
-            return "Medium"
-        return "Low"
 
     @staticmethod
     def _active_scan() -> ActiveScanSummary | None:
@@ -235,7 +213,7 @@ class DashboardService:
     def _top_exposed_service(self, paths: list[dict]) -> ExposedServiceSummary | None:
         candidates = db.dashboard_service_candidates(limit=200)
         rows_by_asset = {str(row["hostname"] or ""): row for row in candidates}
-        # Prefer the exact service named by the strongest attack-path evidence.
+        # Prefer the service named by the strongest attack-path evidence
         for path in paths:
             if not isinstance(path, dict):
                 continue
@@ -252,7 +230,7 @@ class DashboardService:
             if match is not None:
                 return match
 
-        # The storage query provides a deterministic risk-ordered fallback.
+        # Storage already orders candidates by risk
         for row in candidates:
             match = self._service_candidate(row)
             if match is not None:
@@ -319,7 +297,8 @@ class DashboardService:
         proto = str(service.get("proto") or "tcp").lower()
         version = str(service.get("version") or "").strip()
         if not version:
-            version = str(service.get("banner") or "").splitlines()[0].strip()[:72]
+            lines = str(service.get("banner") or "").splitlines()
+            version = lines[0].strip()[:72] if lines else ""
         detail = f"{version + ' - ' if version else ''}public exposure"
         return ExposedServiceSummary(
             title=f"{name} - {port}/{proto}",

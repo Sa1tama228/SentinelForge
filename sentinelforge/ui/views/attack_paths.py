@@ -1,150 +1,243 @@
 from __future__ import annotations
 
+import json
+
 import flet as ft
 
 from ...core import events
 from ...modules.analysis import attack_paths
 from .. import theme as ui
 
-_CONF_COLOR = {
-    "High": ui.DANGER,
-    "Medium": ui.WARN,
-    "Low": ui.INFO,
-}
-
 
 def render(page: ft.Page) -> ft.Control:
-    state = {"include_low": True}
-    rows = ft.ListView(expand=True, spacing=8, auto_scroll=False)
-    summary_row = ft.Row(spacing=12, wrap=True)
-
+    state = {"selected": None, "query": "", "include_low": True, "paths": [], "narrow": False}
+    path_list = ft.ListView(expand=True, spacing=0)
+    detail = ft.Column(
+        spacing=20, expand=True, scroll=ft.ScrollMode.AUTO, horizontal_alignment=ft.CrossAxisAlignment.STRETCH
+    )
+    context = ft.Column(spacing=16, expand=True, scroll=ft.ScrollMode.AUTO)
+    count = ft.Text("", size=12, color=ui.TEXT_MUTED)
+    search = ft.TextField(label="Search paths or assets", text_size=14, dense=True, **ui.input_kwargs())
     include_low = ft.Checkbox(
-        label="Low confidence",
-        value=True,
-        fill_color=ui.PANEL_SELECTED,
-        check_color=ui.ACCENT,
-        label_style=ft.TextStyle(color=ui.MUTED, size=12),
+        label="Include low confidence", value=True, label_style=ft.TextStyle(size=12, color=ui.TEXT_SECONDARY)
     )
 
-    def _summary_card(title: str, value: str, color: str) -> ft.Control:
-        return ui.panel(
-            width=150,
-            height=74,
-            padding=12,
-            content=ft.Column(
-                [
-                    ft.Text(title, size=11, color=ui.MUTED, no_wrap=True),
-                    ft.Text(value, size=22, weight=ft.FontWeight.BOLD, color=color),
-                ],
-                spacing=0,
-            ),
-        )
+    def select(event):
+        state["selected"] = event.control.data
+        display()
+        page.update()
 
-    def _path_card(path: dict) -> ft.Control:
-        confidence = path.get("confidence") or "Low"
-        color = _CONF_COLOR.get(confidence, ui.MUTED)
-        chain = " -> ".join(path.get("chain") or [])
-        evidence = "; ".join(path.get("why_it_matters") or [])
-        controls = "; ".join(path.get("false_positive_controls") or [])
-        validation = "; ".join(path.get("recommended_validation") or [])
-        exposed = "Public exposure" if path.get("internet_exposed") else "Internal/observed exposure"
-        return ui.panel(
-            padding=12,
-            content=ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ui.badge(confidence[:2].upper(), color=color, width=38),
-                            ft.Column(
-                                [
-                                    ft.Text(
-                                        path.get("title") or "Attack path",
-                                        size=14,
-                                        weight=ft.FontWeight.BOLD,
-                                        color=ui.TEXT,
-                                        selectable=True,
-                                    ),
-                                    ft.Text(
-                                        f"{path.get('asset') or '-'}  |  Score {path.get('score')}  |  {exposed}",
-                                        size=11,
-                                        color=ui.MUTED,
-                                        selectable=True,
-                                    ),
-                                ],
-                                spacing=2,
-                                expand=True,
-                            ),
-                        ],
-                        vertical_alignment=ft.CrossAxisAlignment.START,
+    def display():
+        paths = [
+            p for p in state["paths"] if state["query"] in (p.get("title", "") + " " + p.get("asset", "")).casefold()
+        ]
+        count.value = f"{len(paths)} potential paths · up to 50"
+        selected = next((p for p in paths if p["id"] == state["selected"]), paths[0] if paths else None)
+        state["selected"] = selected["id"] if selected else None
+        path_list.controls = [
+            ft.Container(
+                border=ft.Border(bottom=ft.BorderSide(1, ui.BORDER)),
+                content=ft.Button(
+                    height=112,
+                    data=p["id"],
+                    on_click=select,
+                    style=ui.button_style(
+                        background=ui.SURFACE_ACTIVE if p is selected else ui.BACKGROUND, outlined=False
                     ),
-                    ft.Text(f"Chain: {chain or '-'}", size=11, color=ui.TEXT, selectable=True),
-                    ft.Text(f"Evidence: {evidence or '-'}", size=11, color=ui.TEXT, selectable=True),
-                    ft.Text(f"False-positive controls: {controls or '-'}", size=10, color=ui.MUTED, selectable=True),
-                    ft.Text(f"Validate: {validation or '-'}", size=10, color=ui.MUTED, selectable=True),
-                ],
-                spacing=6,
-            ),
-        )
-
-    def _refresh(_payload: dict | None = None) -> None:
-        rows.controls.clear()
-        summary_row.controls.clear()
-        data = attack_paths.analyze(limit=50, include_low=state["include_low"])
-        summary = data.get("summary", {})
-        summary_row.controls.extend(
-            [
-                _summary_card("Paths", str(summary.get("total", 0)), ui.ACCENT),
-                _summary_card("High", str(summary.get("high_confidence", 0)), ui.DANGER),
-                _summary_card("Medium", str(summary.get("medium_confidence", 0)), ui.WARN),
-                _summary_card("Low", str(summary.get("low_confidence", 0)), ui.INFO),
-                _summary_card("Top score", str(summary.get("top_score", 0)), ui.TEXT),
+                    content=ft.Column(
+                        [
+                            ft.Text(p["title"], size=14, color=ui.TEXT, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                            ft.Text(p.get("asset", ""), size=12, color=ui.TEXT_MUTED),
+                            ft.Text(f"{p.get('confidence', 'Low')} confidence", size=12, color=ui.TEXT_SECONDARY),
+                        ],
+                        spacing=8,
+                        alignment=ft.MainAxisAlignment.CENTER,
+                    ),
+                ),
+            )
+            for p in paths
+        ]
+        if selected is None:
+            detail.controls = [
+                ft.Text("Evidence paths", size=22, weight=ft.FontWeight.W_600, color=ui.TEXT),
+                ft.Text("No potential paths match the current evidence and filters", size=14, color=ui.TEXT_MUTED),
             ]
-        )
-        paths = data.get("paths", [])
-        if not paths:
-            rows.controls.append(
-                ui.panel(
-                    padding=14,
-                    content=ft.Text(
-                        "No attack paths found from current evidence.",
-                        color=ui.MUTED,
-                        selectable=True,
+            context.controls = [
+                ui.section(
+                    "Validation",
+                    ft.Text(
+                        "A potential path links observations and still needs independent validation",
+                        size=14,
+                        color=ui.TEXT_MUTED,
+                    ),
+                )
+            ]
+            if state["narrow"]:
+                detail.controls.append(context)
+            return
+        chain = selected.get("chain") or []
+        nodes = []
+        for i, label in enumerate(chain):
+            if i:
+                nodes.append(ft.Icon(ft.Icons.ARROW_FORWARD, color=ui.BRAND, size=20))
+            nodes.append(
+                ft.Container(
+                    width=144,
+                    padding=16,
+                    border=ui.border(ui.BORDER_STRONG),
+                    border_radius=6,
+                    content=ft.Column(
+                        [
+                            ft.Text(f"Step {i + 1}", size=12, color=ui.TEXT_MUTED),
+                            ft.Text(str(label), size=14, color=ui.TEXT, selectable=True),
+                        ],
+                        spacing=8,
                     ),
                 )
             )
-        else:
-            rows.controls.extend(_path_card(path) for path in paths)
+        detail.controls = [
+            ft.Text(selected["title"], size=22, weight=ft.FontWeight.W_600, color=ui.TEXT),
+            ft.Text(f"{selected.get('asset', 'Unknown asset')} · Potential path", size=14, color=ui.TEXT_SECONDARY),
+            ui.section("Evidence path", ft.Row(nodes, scroll=ft.ScrollMode.AUTO, spacing=16)),
+            ui.section(
+                "Supporting observations",
+                ft.Column(
+                    [
+                        ft.Text(str(reason), size=14, color=ui.TEXT_SECONDARY, selectable=True)
+                        for reason in selected.get("why_it_matters", [])
+                    ],
+                    spacing=12,
+                ),
+            ),
+            ui.section(
+                "Source data",
+                ft.Text(
+                    json.dumps(selected.get("evidence") or {}, indent=2, ensure_ascii=False),
+                    size=12,
+                    font_family="Consolas",
+                    color=ui.TEXT_SECONDARY,
+                    selectable=True,
+                ),
+            ),
+        ]
+        context.controls = [
+            ui.section(
+                "Path assessment",
+                ft.Column(
+                    [
+                        ft.Text(f"Confidence: {selected.get('confidence', 'Unknown')}", size=14, color=ui.TEXT),
+                        ft.Text(f"Ranking score: {selected.get('score', 'Unknown')}", size=14, color=ui.TEXT_SECONDARY),
+                        ft.Text("This ranking is not an exploitation probability", size=12, color=ui.TEXT_MUTED),
+                    ],
+                    spacing=12,
+                ),
+            ),
+            ui.section(
+                "Recommended validation",
+                ft.Column(
+                    [
+                        ft.Text(str(item), size=14, color=ui.TEXT_SECONDARY)
+                        for item in selected.get("recommended_validation", [])
+                    ],
+                    spacing=12,
+                ),
+            ),
+            ui.section(
+                "False-positive controls",
+                ft.Column(
+                    [
+                        ft.Text(str(item), size=12, color=ui.TEXT_MUTED)
+                        for item in selected.get("false_positive_controls", [])
+                    ],
+                    spacing=12,
+                ),
+            ),
+        ]
+        if state["narrow"]:
+            detail.controls.append(context)
+
+    def refresh(_payload=None):
+        data = attack_paths.analyze(limit=50, include_low=state["include_low"])
+        state["paths"] = data.get("paths", [])
+        display()
         try:
             page.update()
-        except Exception:
+        except RuntimeError:
+            # Worker events can arrive after the page closes
             pass
 
-    def _include_low_changed(e) -> None:
-        state["include_low"] = bool(e.control.value)
-        _refresh()
+    def query_changed(event):
+        state["query"] = (event.control.value or "").strip().casefold()
+        display()
+        page.update()
 
-    include_low.on_change = _include_low_changed
-    unsub_scan = events.subscribe("scanner", _refresh)
-    unsub_recon = events.subscribe("recon", _refresh)
-    unsub_hp = events.subscribe("honeypot", _refresh)
+    def confidence_changed(event):
+        state["include_low"] = bool(event.control.value)
+        refresh()
+
+    search.on_change = query_changed
+    include_low.on_change = confidence_changed
     page._sf_cleanups = getattr(page, "_sf_cleanups", [])
-    page._sf_cleanups.extend([unsub_scan, unsub_recon, unsub_hp])
+    page._sf_cleanups.extend(events.subscribe(channel, refresh) for channel in ("scanner", "recon", "honeypot"))
+    refresh()
+    context_pane = ft.Container(
+        content=context,
+        width=268,
+        padding=ft.Padding(left=16, top=0, right=0, bottom=0),
+        border=ft.Border(left=ft.BorderSide(1, ui.BORDER)),
+    )
 
-    refresh_button = ui.action_button("Refresh", "REF", lambda _: _refresh(), width=92)
-    _refresh()
+    def adapt(event):
+        visible = event.width >= 1180
+        if context_pane.visible == visible:
+            return
+        context_pane.visible = visible
+        state["narrow"] = not visible
+        context.expand = True if visible else None
+        if visible:
+            if context in detail.controls:
+                detail.controls.remove(context)
+            context_pane.content = context
+        else:
+            context_pane.content = None
+            detail.controls.append(context)
+        page.update()
+
     return ft.Column(
         [
             ft.Row(
                 [
-                    ft.Text("Attack Paths", size=18, weight=ft.FontWeight.BOLD, color=ui.TEXT),
-                    ft.Row([include_low, refresh_button], spacing=10),
+                    ft.Text("Correlations", size=22, weight=ft.FontWeight.W_600, color=ui.TEXT),
+                    ui.action_button("Refresh", ft.Icons.REFRESH, lambda _e: refresh()),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                wrap=True,
             ),
-            summary_row,
-            rows,
+            ft.Row(
+                [
+                    ft.Container(
+                        width=268,
+                        padding=ft.Padding(left=0, top=0, right=16, bottom=0),
+                        border=ft.Border(right=ft.BorderSide(1, ui.BORDER)),
+                        content=ft.Column(
+                            [
+                                ft.Text("Correlation explorer", size=16, color=ui.TEXT),
+                                search,
+                                include_low,
+                                count,
+                                path_list,
+                            ],
+                            spacing=16,
+                            expand=True,
+                        ),
+                    ),
+                    ft.Container(content=detail, expand=True, padding=24),
+                    context_pane,
+                ],
+                spacing=0,
+                expand=True,
+                on_size_change=adapt,
+            ),
         ],
+        spacing=16,
         expand=True,
-        spacing=12,
     )

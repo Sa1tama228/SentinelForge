@@ -1,136 +1,68 @@
 # SentinelForge
 
-SentinelForge is a local defensive security evidence-correlation and attack-path analysis toolkit for home labs and small environments.
+SentinelForge is a desktop toolkit for scanning services, reviewing findings and keeping security evidence together in a home lab or small network
 
-It normalizes findings from service scanning, vulnerability intelligence, passive reconnaissance, web audits, control gaps, and honeypot telemetry into an evidence graph. SentinelForge uses that graph to rank explainable attack paths, retain supporting and contradictory evidence, and produce analyst-friendly reports.
+Use Python 3.11 to 3.13
+The project is pre-release, with desktop checks on Windows and Python 3.13
+Use it on systems you own or have permission to assess
 
-The project is pre-release. Its current focus is improving correlation logic, evidence confidence, path explainability, and false-positive suppression—not replacing mature scanners such as Nmap.
+![SentinelForge desktop overview](dashboard.png)
 
-![SentinelForge dashboard](dashboard.png)
+Demo records in the current desktop UI
 
-## Features
+## What works
 
-- TCP/UDP service scanning with socket or optional Nmap engine
-- Passive recon for DNS, WHOIS/RDAP, subdomains, web tech hints, and safe endpoint checks
-- Low-interaction HTTP, SSH, FTP, Telnet, and SMTP honeypots
-- Local vulnerability cache imports for NVD/generic JSON, CISA KEV, EPSS CSV, exploit CSV, and vendor/distribution advisories
-- Findings, assets, scan history, and multi-format exports
-- Flet desktop UI and basic CLI
+- TCP scanning, lightweight UDP probes and service fingerprinting, with optional Nmap and Nikto support
+- Recon for DNS, RDAP, subdomains and HTTP technology hints
+- HTTP, SSH, FTP, Telnet and SMTP honeypots
+- Asset and finding review, local vulnerability-feed imports and ranked evidence paths
+- Desktop tool tabs, keyboard navigation and a CLI
 
-## Install
+A service banner or advisory match is evidence to investigate, not confirmation that a target is exploitable
+
+## Install and run
+
+From the repository root in PowerShell:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip install .
+$env:SF_DATA_DIR = Join-Path $env:LOCALAPPDATA "SentinelForge"
+.\.venv\Scripts\sentinelforge-ui.exe
 ```
 
-Optional packet tooling is intentionally separate:
+`SF_DATA_DIR` holds configuration, SQLite data and default exports
+Set it in each terminal before starting the app or CLI
+Changing this path does not move existing data
 
-```powershell
-.\.venv\Scripts\python -m pip install -e ".[packet]"
-```
-
-## Run UI
-
-```powershell
-sentinelforge-ui
-```
-
-or:
-
-```powershell
-python main.py
-```
+The package includes the font, warning sound and bundled lookup data
+Install Nmap or Nikto separately if you want to use those engines
+Optional packet libraries are available with `.\.venv\Scripts\python.exe -m pip install ".[packet]"`; PyShark capture remains unfinished
 
 ## CLI
 
 ```powershell
-sentinelforge scan 127.0.0.1 --ports 22,80,443
-sentinelforge recon example.com
-sentinelforge export --format html
-sentinelforge attack-paths
-sentinelforge doctor
-sentinelforge validate-feed epss_csv data/epss.csv
-sentinelforge sync-vulns --validate-only
-sentinelforge cleanup
+.\.venv\Scripts\sentinelforge.exe doctor
+.\.venv\Scripts\sentinelforge.exe scan 127.0.0.1 --ports 22,80,443
+.\.venv\Scripts\sentinelforge.exe export --format json
 ```
 
-## Health Checks
+Run `doctor` to check the environment and optional tools
+Public scan targets are blocked by default; configure the allowlist and scope settings before scanning external assets
+Feed imports read local files, and the bundled demo cache is not a current vulnerability feed
 
-Run `doctor` before opening an issue or enabling optional engines:
+## Reports and current limits
 
-```powershell
-sentinelforge doctor
-```
+Export TXT, JSON, CSV, HTML, Markdown, SARIF or STIX from the UI or CLI
+Report exports include the full inventory and ignore the current view filters
+They have no fixed row cap, though large exports still need enough memory to build the report
 
-It checks Python, SQLite, DB integrity, WAL mode, optional tools, package imports, scanner policy, local counts, and vulnerability source quality.
+JSON retains the report payload
+STIX uses Notes for findings and inventory context, with linked CVEs represented as Vulnerability objects
+Readable reports and interchange formats publish different views of the same data
 
-## Stress Testing
+Switching tools resets filters and unsaved forms while backend jobs keep running
+Jobs do not survive an application restart
+Local AI and separate project workspaces are not implemented
 
-SentinelForge includes local synthetic stress data tools for validating report, graph, attack path, and honeypot-campaign performance without scanning real systems.
-
-```powershell
-sentinelforge stress-seed --assets 5000 --findings-per-asset 3 --honeypot-events 100000 --recon-targets 1000
-sentinelforge stress-benchmark --report-format json
-sentinelforge stress-clear
-```
-
-`stress-clear` removes only synthetic records created with the SentinelForge stress prefix.
-
-## Optional Engines
-
-Nmap is used automatically when installed and the scanner engine is set to `auto` or `nmap`. Extra Nmap flags can be configured, but SentinelForge owns output and target flags internally.
-
-Nikto can be enabled as an optional web audit engine. SentinelForge stores Nikto output as supporting evidence that should be manually validated before treating it as confirmed.
-
-Packet tooling is optional:
-
-```powershell
-python -m pip install -e ".[packet]"
-```
-
-PyShark/Wireshark/TShark support is currently marked WIP.
-
-## Scope Controls
-
-Public targets are blocked by default. Configure scanner scope before scanning external assets.
-
-Supported scanner settings:
-
-- `target_allowlist`: list of wildcard patterns
-- `scope_file_path`: path to a text file with one hostname/IP/wildcard per line
-- `block_public_targets`: default `true`
-- `block_private_targets`: default `false`
-
-Example scope file:
-
-```text
-127.0.0.1
-*.internal.example
-10.0.0.*
-```
-
-## Vulnerability Feeds
-
-Use Settings or CLI validation before importing:
-
-```powershell
-sentinelforge validate-feed nvd_json C:\feeds\nvd
-sentinelforge validate-feed vendor_advisory_json C:\feeds\ubuntu-osv.json
-```
-
-The importer supports official and generic shapes for JSON and CSV feeds. The Settings page shows accepted rows and minimum fields.
-
-## Development
-
-```powershell
-python -m pytest -q
-python -m compileall -q sentinelforge tests
-ruff check .
-```
-
-Tests isolate runtime data through `SF_DATA_DIR`.
-
-## Status
-
-This project is pre-release. Review scope controls and local laws before using it outside a lab.
+See [ROADMAP.md](ROADMAP.md) for the next work and [CHANGELOG.md](CHANGELOG.md) for recent changes

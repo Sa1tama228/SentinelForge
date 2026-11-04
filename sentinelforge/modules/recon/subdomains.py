@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 import dns.resolver
 

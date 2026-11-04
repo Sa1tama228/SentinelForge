@@ -17,7 +17,7 @@ def export_target(target_id: int, out_dir: str | None = None) -> Path:
     path = base / f"recon-{safe}-{target_id}.txt"
 
     lines = [
-        f"SentinelForge recon export",
+        "SentinelForge recon export",
         f"Target: {domain}",
         f"Target id: {target_id}",
         f"Created: {target['added_ts']}",

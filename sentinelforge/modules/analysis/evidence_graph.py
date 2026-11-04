@@ -105,14 +105,20 @@ class EvidenceGraph:
         }
 
 
-def build(limit_assets: int = 10000, *, honeypot_limit: int = 500) -> EvidenceGraph:
+def build(
+    limit_assets: int | None = 10000,
+    *,
+    honeypot_limit: int | None = 500,
+    finding_limit: int | None = 10000,
+    recon_limit: int | None = 1000,
+) -> EvidenceGraph:
     graph = EvidenceGraph()
     asset_rows = db.assets(limit=limit_assets)
     asset_ids = [int(row["id"]) for row in asset_rows]
-    finding_rows = db.findings(limit=10000)
+    finding_rows = db.findings(limit=finding_limit)
     matches_by_finding = db.vulnerability_matches_for_findings([int(row["id"]) for row in finding_rows])
     packages_by_asset = db.asset_packages_for_assets(asset_ids)
-    recon_targets = db.recent_targets(limit=1000)
+    recon_targets = db.recent_targets(limit=recon_limit)
 
     asset_nodes: dict[int, EvidenceNode] = {}
     asset_by_host: dict[str, EvidenceNode] = {}
@@ -158,7 +164,9 @@ def build(limit_assets: int = 10000, *, honeypot_limit: int = 500) -> EvidenceGr
             **finding,
         )
         if asset_node:
-            graph.add_edge(asset_node, finding_node, "has_finding", confidence=_confidence_label_score(finding.get("confidence")))
+            graph.add_edge(
+                asset_node, finding_node, "has_finding", confidence=_confidence_label_score(finding.get("confidence"))
+            )
         for match_row in matches_by_finding.get(int(finding["id"]), []):
             _add_vulnerability_match(graph, asset_node, finding_node, dict(match_row))
         _add_control_gap_edges(graph, asset_node, finding_node, finding)
@@ -182,7 +190,9 @@ def build(limit_assets: int = 10000, *, honeypot_limit: int = 500) -> EvidenceGr
             )
             graph.add_edge(target_node, recon_node, "observed", confidence=_recon_confidence(finding["kind"], data))
             if asset_node:
-                graph.add_edge(asset_node, recon_node, "recon_evidence", confidence=_recon_confidence(finding["kind"], data))
+                graph.add_edge(
+                    asset_node, recon_node, "recon_evidence", confidence=_recon_confidence(finding["kind"], data)
+                )
 
     _add_honeypot_signals(graph, honeypot_limit=honeypot_limit)
     return graph

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import urllib.request
-import urllib.parse
 import hashlib
+import urllib.parse
+import urllib.request
 from functools import lru_cache
 from pathlib import Path
 

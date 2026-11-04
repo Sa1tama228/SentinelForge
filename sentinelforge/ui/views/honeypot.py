@@ -26,18 +26,18 @@ _LOG_LIMIT_DETAILED = 200
 def _status_chip(running: bool) -> ft.Control:
     return ft.Container(
         padding=ft.Padding(left=10, top=4, right=10, bottom=4),
-        border_radius=10,
+        border_radius=4,
         bgcolor=ui.PANEL_SELECTED if running else ui.PANEL_2,
         content=ft.Text(
             "RUNNING" if running else "STOPPED",
-            size=10, color=ui.ACCENT if running else ui.MUTED,
+            size=12, color=ui.ACCENT if running else ui.MUTED,
             weight=ft.FontWeight.BOLD,
         ),
     )
 
 
 def _kind_card(mgr, kind: str, label: str,
-               port_key: str, icon: str, on_change) -> ft.Control:
+               port_key: str, on_change) -> ft.Control:
     port = int(config.load()["honeypot"][port_key])
     status = mgr.status()[kind]
     running = status["running"]
@@ -49,22 +49,14 @@ def _kind_card(mgr, kind: str, label: str,
         accent=ui.DANGER if running else ui.ACCENT,
         width=96,
     )
-    return ui.panel(
-        width=220,
-        height=132,
-        padding=16,
-        content=ft.Container(
-            content=ft.Column(
-                [
-                    ft.Row([ui.badge(icon), ft.Text(label, size=18, weight=ft.FontWeight.BOLD, color=ui.TEXT)],
-                           alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                    ft.Text(f"Bind {status.get('host', '0.0.0.0')}:{port}", size=12, color=ui.MUTED),
-                    ft.Text(mgr.error(kind), size=10, color=ui.DANGER),
-                    ft.Row([chip, btn], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ],
-                spacing=6,
-            ),
-        ),
+    return ft.Container(
+        height=64, padding=ft.Padding(left=0, top=8, right=0, bottom=8),
+        border=ft.Border(bottom=ft.BorderSide(1, ui.BORDER)),
+        content=ft.Row([
+            ft.Text(label, width=100, size=14, weight=ft.FontWeight.W_600, color=ui.TEXT),
+            ft.Text(f"{status.get('host', '0.0.0.0')}:{port}", width=220, size=14, color=ui.MUTED),
+            ft.Text(mgr.error(kind), size=12, color=ui.DANGER, expand=True), chip, btn,
+        ], spacing=16),
     )
 
 
@@ -139,10 +131,10 @@ def render(page: ft.Page) -> ft.Control:
     cfg = config.load()
     hp_cfg = cfg["honeypot"]
 
-    cards_row = ft.Row(spacing=12, wrap=True, run_spacing=12)
+    cards_row = ft.Column(spacing=0)
     stats_text = ft.Text(size=12, color=ui.MUTED)
     class_text = ft.Text(size=12, color=ui.MUTED, selectable=True)
-    credential_text = ft.Text(size=11, color=ui.MUTED, selectable=True)
+    credential_text = ft.Text(size=12, color=ui.MUTED, selectable=True)
     feed = ft.ListView(expand=True, spacing=6, auto_scroll=True)
     campaigns_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO)
     sessions_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO)
@@ -180,13 +172,13 @@ def render(page: ft.Page) -> ft.Control:
     ftp_port = ft.TextField(label="FTP port", value=str(hp_cfg["ftp_port"]), width=150, dense=True, **ui.input_kwargs())
     telnet_port = ft.TextField(label="Telnet port", value=str(hp_cfg["telnet_port"]), width=150, dense=True, **ui.input_kwargs())
     smtp_port = ft.TextField(label="SMTP port", value=str(hp_cfg["smtp_port"]), width=150, dense=True, **ui.input_kwargs())
-    persona_text = ft.Text(size=11, color=ui.MUTED, selectable=True)
+    persona_text = ft.Text(size=12, color=ui.MUTED, selectable=True)
 
     def _rebuild_cards() -> None:
         cards_row.controls.clear()
-        for kind, label, port_key, icon in _KINDS:
+        for kind, label, port_key, _icon in _KINDS:
             cards_row.controls.append(
-                _kind_card(mgr, kind, label, port_key, icon, _on_toggle)
+                _kind_card(mgr, kind, label, port_key, _on_toggle)
             )
 
     def _refresh(_payload: dict | None = None) -> None:
@@ -238,13 +230,13 @@ def render(page: ft.Page) -> ft.Control:
                                         [
                                             ft.Text(
                                                 summary_text,
-                                                size=11,
+                                                size=12,
                                                 selectable=True,
                                                 color=ui.TEXT,
                                             ),
                                             ft.Text(
                                                 f"{row['ts']}  |  {row['hp_type'].upper()}  |  {row['src_ip']}:{row['src_port']}",
-                                                size=10,
+                                                size=12,
                                                 selectable=True,
                                                 color=ui.MUTED,
                                             ),
@@ -256,7 +248,7 @@ def render(page: ft.Page) -> ft.Control:
                                 spacing=8,
                                 vertical_alignment=ft.CrossAxisAlignment.START,
                             ),
-                            ft.Text(detail_text, size=10, selectable=True, color=ui.MUTED)
+                            ft.Text(detail_text, size=12, selectable=True, color=ui.MUTED)
                             if detail_text
                             else ft.Container(),
                         ],
@@ -265,13 +257,14 @@ def render(page: ft.Page) -> ft.Control:
                 )
             )
         if not feed.controls:
-            feed.controls.append(ft.Text("No signal events match the current filters.", size=11, color=ui.MUTED))
+            feed.controls.append(ft.Text("No signal events match the current filters", size=12, color=ui.MUTED))
         credential_text.value = "Credential attempts: " + (", ".join(credentials[:12]) or "-")
         _render_campaigns()
         _render_sessions()
         try:
             page.update()
-        except Exception:
+        except RuntimeError:
+            # Worker events can arrive after the page closes
             pass
 
     def _render_sessions() -> None:
@@ -282,15 +275,15 @@ def render(page: ft.Page) -> ft.Control:
                     padding=8,
                     content=ft.Column(
                         [
-                            ft.Text(f"{item['src_ip']}  events={item['count']}  services={','.join(item['types'])}", size=11, color=ui.TEXT, selectable=True),
-                            ft.Text(f"{item['first_ts']} -> {item['last_ts']}  {','.join(item['classifications'])}", size=10, color=ui.MUTED, selectable=True),
+                            ft.Text(f"{item['src_ip']}  events={item['count']}  services={','.join(item['types'])}", size=12, color=ui.TEXT, selectable=True),
+                            ft.Text(f"{item['first_ts']} -> {item['last_ts']}  {','.join(item['classifications'])}", size=12, color=ui.MUTED, selectable=True),
                         ],
                         spacing=2,
                     ),
                 )
             )
         if not sessions_list.controls:
-            sessions_list.controls.append(ft.Text("No sessions yet", size=11, color=ui.MUTED))
+            sessions_list.controls.append(ft.Text("No sessions yet", size=12, color=ui.MUTED))
 
     def _render_campaigns() -> None:
         campaigns_list.controls.clear()
@@ -306,7 +299,7 @@ def render(page: ft.Page) -> ft.Control:
                                     ui.badge(str(campaign["score"]), color=color, width=42),
                                     ft.Text(
                                         f"{campaign['src_ip']}  {campaign['intent']}  events={campaign['event_count']}",
-                                        size=11,
+                                        size=12,
                                         color=ui.TEXT,
                                         selectable=True,
                                         expand=True,
@@ -316,13 +309,13 @@ def render(page: ft.Page) -> ft.Control:
                             ),
                             ft.Text(
                                 f"Services: {campaign['services']}  Classes: {campaign['classifications']}",
-                                size=10,
+                                size=12,
                                 color=ui.MUTED,
                                 selectable=True,
                             ),
                             ft.Text(
                                 f"Paths: {', '.join(campaign['top_paths']) or '-'}  Alerts: {', '.join(campaign['alerts']) or '-'}",
-                                size=10,
+                                size=12,
                                 color=ui.MUTED,
                                 selectable=True,
                             ),
@@ -332,7 +325,7 @@ def render(page: ft.Page) -> ft.Control:
                 )
             )
         if not campaigns_list.controls:
-            campaigns_list.controls.append(ft.Text("No campaigns yet", size=11, color=ui.MUTED))
+            campaigns_list.controls.append(ft.Text("No campaigns yet", size=12, color=ui.MUTED))
 
     def _on_toggle(kind: str) -> None:
         if mgr.status()[kind]["running"]:
@@ -368,7 +361,7 @@ def render(page: ft.Page) -> ft.Control:
             return
         _rebuild_cards()
         _refresh()
-        ui.notify(page, "Honeypot ports saved. Restart running honeypots to apply changes.")
+        ui.notify(page, "Honeypot ports saved; restart running honeypots to apply changes")
 
     def _clear_logs(_):
         db.clear_honeypot_events()
@@ -391,9 +384,7 @@ def render(page: ft.Page) -> ft.Control:
 
     ports_panel = ft.Container(
         padding=14,
-        border_radius=8,
-        bgcolor=ui.PANEL,
-        border=ui.border(),
+        border=ft.Border(top=ft.BorderSide(1, ui.BORDER)),
         content=ft.Column(
             [
                 ft.Text("Honeypot ports", size=15, weight=ft.FontWeight.BOLD, color=ui.TEXT),
@@ -418,11 +409,11 @@ def render(page: ft.Page) -> ft.Control:
 
     return ft.Column(
         [
-            ft.Text("Honeypot servers", size=18, weight=ft.FontWeight.BOLD, color=ui.TEXT),
+            ft.Text("Honeypots", size=22, weight=ft.FontWeight.W_600, color=ui.TEXT),
             ft.Text(
                 "Low-interaction honeypots. Deploy only on hosts you own. "
-                "Captured connections are stored locally.",
-                size=11, color=ui.MUTED,
+                "Captured connections are stored locally",
+                size=12, color=ui.MUTED,
             ),
             cards_row,
             persona_text,

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-import json
+# Explicit aliases preserve existing exports through the storage facade.
+import json as json
 import sqlite3
 
-from .. import config
-from .connection import FINDING_STATUSES, _json_dump, _json_load, _merge_list, cursor, now
+from .. import config as config
+from .connection import FINDING_STATUSES as FINDING_STATUSES
+from .connection import cursor, now
+
 
 def add_scan_schedule(*, target: str, ports: str, profile_key: str = "custom",
                       check_vulns: bool = False, interval_hours: int = 24,
@@ -64,33 +67,43 @@ def delete_scan_schedule(schedule_id: int) -> None:
 
 def clear_scan_history() -> None:
     with cursor() as c:
-        c.execute("DELETE FROM vulnerability_matches")
-        c.execute("DELETE FROM service_fingerprints")
-        c.execute("DELETE FROM scan_results")
-        c.execute("DELETE FROM scan_runs")
-        c.execute("DELETE FROM asset_scan_history")
+        # Workers can still write results until finish_scan_run sets finished_ts
+        c.execute("SELECT id FROM scan_runs WHERE finished_ts IS NOT NULL AND finished_ts<>''")
+        _delete_scan_runs(c, [int(row["id"]) for row in c.fetchall()])
 
 
 def prune_scan_history(max_runs: int = 5000) -> int:
     max_runs = max(0, int(max_runs))
     with cursor() as c:
         c.execute(
-            "SELECT id FROM scan_runs ORDER BY id DESC LIMIT -1 OFFSET ?",
+            "SELECT id FROM scan_runs WHERE finished_ts IS NOT NULL AND finished_ts<>'' "
+            "ORDER BY id DESC LIMIT -1 OFFSET ?",
             (max_runs,),
         )
         old_ids = [int(row["id"]) for row in c.fetchall()]
-        if not old_ids:
-            return 0
-        placeholders = ",".join("?" for _ in old_ids)
-        c.execute(f"DELETE FROM vulnerability_matches WHERE service_fingerprint_id IN "
-                  f"(SELECT id FROM service_fingerprints WHERE scan_result_id IN "
-                  f"(SELECT id FROM scan_results WHERE run_id IN ({placeholders})))", tuple(old_ids))
-        c.execute(f"DELETE FROM service_fingerprints WHERE scan_result_id IN "
-                  f"(SELECT id FROM scan_results WHERE run_id IN ({placeholders}))", tuple(old_ids))
-        c.execute(f"DELETE FROM scan_results WHERE run_id IN ({placeholders})", tuple(old_ids))
-        c.execute(f"DELETE FROM asset_scan_history WHERE scan_run_id IN ({placeholders})", tuple(old_ids))
-        c.execute(f"DELETE FROM scan_runs WHERE id IN ({placeholders})", tuple(old_ids))
+        _delete_scan_runs(c, old_ids)
         return len(old_ids)
+
+
+def _delete_scan_runs(c: sqlite3.Cursor, run_ids: list[int]) -> None:
+    if not run_ids:
+        return
+    placeholders = ",".join("?" for _ in run_ids)
+    values = tuple(run_ids)
+    c.execute(
+        f"DELETE FROM vulnerability_matches WHERE service_fingerprint_id IN "
+        f"(SELECT id FROM service_fingerprints WHERE scan_result_id IN "
+        f"(SELECT id FROM scan_results WHERE run_id IN ({placeholders})))",
+        values,
+    )
+    c.execute(
+        f"DELETE FROM service_fingerprints WHERE scan_result_id IN "
+        f"(SELECT id FROM scan_results WHERE run_id IN ({placeholders}))",
+        values,
+    )
+    c.execute(f"DELETE FROM scan_results WHERE run_id IN ({placeholders})", values)
+    c.execute(f"DELETE FROM asset_scan_history WHERE scan_run_id IN ({placeholders})", values)
+    c.execute(f"DELETE FROM scan_runs WHERE id IN ({placeholders})", values)
 
 
 def clear_findings() -> None:
@@ -127,6 +140,7 @@ def vulnerability_match_suppressed(*, cve_id: str, asset_id: int | None,
 
 
 # --- honeypot ---------------------------------------------------------------
+
 
 def create_scan_run(target: str, ports: str, *, check_vulns: bool = False, profile_key: str = "custom") -> int:
     with cursor() as c:
